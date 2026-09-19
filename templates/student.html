@@ -39,7 +39,7 @@ textarea{resize:vertical;min-height:42px}
 @media(max-width:460px){.wrap{padding:18px 12px 36px}.field,.field.wide{grid-column:1/-1}.panel{border-radius:13px}.entry{padding:11px}.points{padding:4px 7px}}
 </style>
 </head>
-<body><main class="wrap">
+<body><div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px"><span style="font-size:13px;color:#53627a">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>{% if session.get("can_edit") %}<a href="/change-password">Đổi mật khẩu</a><form method="post" action="/logout" style="margin:0"><button style="padding:7px 12px">Thoát sửa</button></form>{% else %}<a href="/login">Đăng nhập chỉnh sửa</a>{% endif %}</div><main class="wrap">
 <a class="back" href="/class/{{s.class_id}}">← Quay lại lớp {{s.class_name}}</a>
 <header class="head"><div><div class="eyebrow">Hồ sơ học sinh</div><h1>{{s.name}}</h1><div class="sub">Mã học sinh: <b>{{s.student_code}}</b> · Lớp {{s.class_name}}</div></div><span class="pill">Hồ sơ cá nhân</span></header>
 {% for m in get_flashed_messages() %}<div class="flash">{{m}}</div>{% endfor %}
@@ -75,7 +75,8 @@ textarea{resize:vertical;min-height:42px}
 <form method="post" action="/student/{{s.id}}/event">
 <div class="form-grid">
 <div class="field"><label>Ngày</label><input type="date" name="day" value="{{today}}"></div>
-<div class="field wide"><label>Hoạt động</label><select name="event_type"><option>Xung phong</option><option>Tích cực</option><option>Làm ồn</option><option>Nói chuyện</option><option>Chưa làm bài tập</option><option>Bị phạt</option><option>Khác</option></select></div>
+<div class="field wide"><label>Hoạt động</label><select name="event_type">
+<option>Xung phong</option><option>Tích cực</option><option>Làm tốt lý thuyết</option><option>Làm chưa tốt lý thuyết</option><option>Làm tốt bài tập</option><option>Làm chưa tốt bài tập</option><option>Chưa làm được bài tập</option><option>Làm tốt bài áp dụng</option><option>Làm tốt bài nâng cao</option><option>Làm ồn</option><option>Nói chuyện</option><option>Không làm bài</option><option>Không ghi bài</option><option>Chưa làm bài tập</option><option>Vô lễ</option><option>Bị phạt</option><option>Khác</option></select></div>
 <div class="field"><label>Điểm (+ / −)</label><input type="number" step="0.5" name="points" value="0"></div>
 <div class="field"><label>Môn học</label><input name="subject" placeholder="VD: Vật lý"></div>
 <div class="field"><label>Bài / tiết</label><input name="lesson" placeholder="VD: Bài 2, tiết 3"></div>
