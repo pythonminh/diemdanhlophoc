@@ -14,6 +14,13 @@ td:nth-child(5){min-width:230px;max-width:330px}td:nth-child(6){min-width:100px}
 .quick-controls{display:flex;flex-wrap:wrap;align-items:center;gap:5px;min-width:270px}
 .quick-controls select,.quick-controls input{margin:0;padding:7px 8px;font-size:12px;max-width:145px}
 .quick-controls .quick-note{max-width:190px}
+.event-checks{display:grid;grid-template-columns:repeat(2,minmax(130px,1fr));gap:5px;min-width:290px}
+.event-check{display:flex;align-items:center;gap:5px;border:1px solid #e2e8f0;border-radius:7px;padding:5px 7px;background:#fff;font-size:12px;white-space:nowrap}
+.event-check input{margin:0;accent-color:#315de8}.event-check.pos{border-left:3px solid #16a36a}.event-check.neg{border-left:3px solid #dc3545}
+tr.att-present td{background:#effaf3!important}tr.att-absent td{background:#fff0f0!important}
+tr.att-late td{background:#fff8e8!important}
+.upload-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:700px){.event-checks{grid-template-columns:1fr;min-width:235px}.upload-grid{grid-template-columns:1fr}}
 .quick-head{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:12px 0}
 .quick-head label{font-size:12px;color:#53627a;display:block}
 .quick-head input{margin:3px 0 0}
@@ -26,7 +33,13 @@ td:nth-child(5){min-width:230px;max-width:330px}td:nth-child(6){min-width:100px}
 .detail-box h4{margin:0 0 8px;font-size:14px}.history-item{padding:7px 0;border-bottom:1px dashed #e0e6ef;overflow-wrap:anywhere}
 .history-item:last-child{border:0}.muted{color:#718096}.points{font-weight:800;padding:4px 8px;border-radius:7px;white-space:nowrap}
 @media(max-width:700px){body{margin:10px auto;padding:0 8px}section{padding:11px;border-radius:11px}.table-wrap{max-height:72vh}th,td{padding:8px 9px;font-size:12px}.detail-grid{grid-template-columns:1fr}.detail-box{padding:10px}th:nth-child(2),td:nth-child(2){left:80px;min-width:150px}}
-</style><body><p><a href="/">← Danh sách lớp</a></p><h1>Lớp {{cl.name}}</h1>{% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}<section><h2>Đọc / cập nhật danh sách từ tệp LaTeX</h2><p>Chọn file .tex cùng định dạng bảng trên GitHub. Dữ liệu khớp theo mã HS: mã đã có thì cập nhật họ tên/ngày sinh/giới tính; mã mới thì thêm. Lịch sử điểm danh không bị xóa.</p><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-tex"><input type="file" name="tex_file" accept=".tex" required><button>Đọc và cập nhật danh sách</button></form></section><section><h2>Thông tin lớp / GVCN</h2><form method="post" action="/class/{{cl.id}}/settings"><input name="school_year" placeholder="Năm học" value="{{cl.school_year}}"><input name="homeroom_teacher" placeholder="Họ tên GVCN" value="{{cl.homeroom_teacher}}"><input name="teacher_phone" placeholder="Điện thoại GVCN" value="{{cl.teacher_phone}}"><button>Lưu</button></form></section><section><h2>Thêm học sinh thủ công</h2><form method="post" action="/class/{{cl.id}}/student/add"><input name="student_code" placeholder="Mã học sinh" required><input name="name" placeholder="Họ và tên" required><input type="date" name="birth_date"><input name="gender" placeholder="Giới tính"><input name="phone" placeholder="Điện thoại HS"><input name="parent_name" placeholder="Họ tên phụ huynh"><input name="parent_phone" placeholder="Điện thoại phụ huynh"><button>Thêm học sinh</button></form></section><section><h2>Danh sách học sinh ({{students|length}})</h2>
+</style><body><p><a href="/">← Danh sách lớp</a></p><h1>Lớp {{cl.name}}</h1>{% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}<section><h2>Nhập / cập nhật danh sách học sinh</h2>
+<p class="muted">Có thể tải mẫu Excel, điền rồi tải lên; hoặc dán trực tiếp danh sách dạng mỗi dòng: Mã HS, Họ tên, Ngày sinh, Giới tính, Điện thoại HS, Tên phụ huynh, Điện thoại phụ huynh, Ghi chú (ngăn cách bằng tab hoặc dấu phẩy). Mã đã có sẽ cập nhật, mã mới sẽ thêm; lịch sử được giữ.</p>
+<div class="upload-grid">
+<div class="detail-box"><h4>Nhập Excel</h4><p><a href="/class/{{cl.id}}/students-template.xlsx">⬇ Tải file Excel mẫu</a></p><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-xlsx"><input type="file" name="xlsx_file" accept=".xlsx" required><button>Upload Excel và cập nhật</button></form></div>
+<div class="detail-box"><h4>Dán danh sách trực tiếp</h4><form method="post" action="/class/{{cl.id}}/import-text"><textarea name="students_text" rows="5" style="width:100%;padding:10px;border:1px solid #d6deeb;border-radius:8px" placeholder="HS051&#9;NGUYỄN VĂN B&#9;12/03/2011&#9;Nam" required></textarea><button>Đọc văn bản</button></form></div>
+</div>
+<details style="margin-top:10px"><summary>Nhập từ file LaTeX (.tex)</summary><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-tex"><input type="file" name="tex_file" accept=".tex" required><button>Đọc và cập nhật .tex</button></form></details></section><section><h2>Thông tin lớp / GVCN</h2><form method="post" action="/class/{{cl.id}}/settings"><input name="school_year" placeholder="Năm học" value="{{cl.school_year}}"><input name="homeroom_teacher" placeholder="Họ tên GVCN" value="{{cl.homeroom_teacher}}"><input name="teacher_phone" placeholder="Điện thoại GVCN" value="{{cl.teacher_phone}}"><button>Lưu</button></form></section><section><h2>Thêm học sinh thủ công</h2><form method="post" action="/class/{{cl.id}}/student/add"><input name="student_code" placeholder="Mã học sinh" required><input name="name" placeholder="Họ và tên" required><input type="date" name="birth_date"><input name="gender" placeholder="Giới tính"><input name="phone" placeholder="Điện thoại HS"><input name="parent_name" placeholder="Họ tên phụ huynh"><input name="parent_phone" placeholder="Điện thoại phụ huynh"><button>Thêm học sinh</button></form></section><section><h2>Danh sách học sinh ({{students|length}})</h2>
 <p style="color:#66758b;font-size:13px;margin-top:-5px">Tích chọn trực tiếp từng học sinh rồi lưu một lần cho cả lớp. Cột mã và tên được cố định khi cuộn ngang.</p>
 <form method="post" action="/class/{{cl.id}}/bulk-record" id="bulkForm">
 <div class="quick-head">
@@ -35,12 +48,16 @@ td:nth-child(5){min-width:230px;max-width:330px}td:nth-child(6){min-width:100px}
 <label>Bài / tiết (áp dụng chung)<br><input name="lesson" placeholder="VD: Bài 2, tiết 3"></label>
 </div>
 <div class="table-wrap">
-<table><thead><tr><th>Mã HS</th><th>Họ tên</th><th>Điểm danh nhanh</th><th>Hoạt động / vi phạm nhanh</th><th>Ghi nhận / lỗi gần đây</th><th>Tổng điểm</th><th>Điện thoại</th><th>Phụ huynh</th><th>Hồ sơ</th></tr></thead><tbody>
+<table><thead><tr><th>Mã HS</th><th>Họ tên</th><th>Điểm danh nhanh</th><th>Tích chọn hoạt động / vi phạm (có thể nhiều)</th><th>Ghi nhận / lỗi gần đây</th><th>Tổng điểm</th><th>Điện thoại</th><th>Phụ huynh</th><th>Hồ sơ</th></tr></thead><tbody>
 {% for s in students %}{% set summary=student_summaries[s.id] %}
 <tr>
 <td data-label="Mã HS">{{s.student_code}}</td><td data-label="Họ tên"><button type="button" class="student-name" onclick="toggleDetail('detail-{{s.id}}',this)" aria-expanded="false">{{s.name}} ▾</button></td>
-<td data-label="Điểm danh nhanh"><div class="quick-controls"><select name="attendance_{{s.id}}"><option value="">— Không đổi —</option><option>Có mặt</option><option>Vắng có phép</option><option>Vắng không phép</option><option>Đi trễ</option></select></div></td>
-<td data-label="Hoạt động / vi phạm nhanh"><div class="quick-controls"><select name="event_{{s.id}}"><option value="">— Không ghi —</option><option>Xung phong</option><option>Tích cực</option><option>Làm ồn</option><option>Nói chuyện</option><option>Chưa làm bài tập</option><option>Bị phạt</option><option>Khác</option></select><input type="number" step="0.5" name="points_{{s.id}}" value="0" aria-label="Điểm cộng trừ" style="width:78px"><input class="quick-note" name="note_{{s.id}}" placeholder="Ghi chú riêng" aria-label="Ghi chú"></div></td>
+<td data-label="Điểm danh nhanh"><div class="quick-controls"><select name="attendance_{{s.id}}" onchange="paintAttendance({{s.id}},this.value)"><option value="">— Không đổi —</option><option>Có mặt</option><option>Vắng có phép</option><option>Vắng không phép</option><option>Đi trễ</option></select></div></td>
+<td data-label="Tích chọn hoạt động / vi phạm"><div class="event-checks">
+{% for label,pts in event_defaults.items() %}
+<label class="event-check {{'pos' if pts>0 else ('neg' if pts<0 else '')}}"><input type="checkbox" name="events_{{s.id}}" value="{{label}}|{{pts}}"><span>{{label}}</span><b style="margin-left:auto;color:{{'#168454' if pts>0 else ('#c43242' if pts<0 else '#64748b')}}">{{'+' if pts>0 else ''}}{{pts}}</b></label>
+{% endfor %}
+</div><input class="quick-note" name="note_{{s.id}}" placeholder="Ghi chú riêng cho học sinh" aria-label="Ghi chú" style="width:100%;margin-top:6px"></td>
 <td data-label="Lỗi / ghi nhận" style="min-width:220px;max-width:340px">
 {% if summary.recent_events %}
 {% for e in summary.recent_events %}
@@ -62,8 +79,15 @@ td:nth-child(5){min-width:230px;max-width:330px}td:nth-child(6){min-width:100px}
 </div></td></tr>
 {% else %}<tr><td colspan="9">Chưa có học sinh.</td></tr>{% endfor %}
 </tbody></table></div>
-<div class="savebar"><span style="font-size:13px;color:#53627a">Chỉ lưu mục đã chọn: điểm danh khác “Không đổi” hoặc hoạt động khác “Không ghi”.</span><button type="submit">Lưu ghi nhận cả lớp</button></div>
+<div class="savebar"><span style="font-size:13px;color:#53627a">Chọn trạng thái và tích mọi tình huống xảy ra; điểm cộng/trừ mặc định hiện cạnh từng mục. Mọi lựa chọn được lưu vào lịch sử.</span><button type="submit">Lưu ghi nhận cả lớp</button></div>
 </form></section><section><h2>Kế hoạch dạy học</h2><form method="post" action="/class/{{cl.id}}/plan"><input name="subject" placeholder="Môn học" required><input name="lesson" placeholder="Bài học" required><input type="date" name="day"><input name="period" placeholder="Tiết"><input name="note" placeholder="Ghi chú"><button>Lưu kế hoạch</button></form>{% for p in plans %}<p>{{p.day}} · {{p.subject}} · {{p.lesson}} · Tiết {{p.period}} — {{p.note}}</p>{% endfor %}</section><script>
+function paintAttendance(id,value){
+ const row=document.getElementById('student-row-'+id);
+ row.classList.remove('att-present','att-absent','att-late');
+ if(value==='Có mặt') row.classList.add('att-present');
+ else if(value==='Vắng có phép'||value==='Vắng không phép') row.classList.add('att-absent');
+ else if(value==='Đi trễ') row.classList.add('att-late');
+}
 function toggleDetail(id,btn){
  const row=document.getElementById(id);
  const open=row.hidden;
