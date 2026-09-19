@@ -87,8 +87,16 @@ def class_page(cid):
         cl=c.execute("SELECT * FROM classes WHERE id=?",(cid,)).fetchone()
         if not cl: return "Không tìm thấy lớp",404
         students=c.execute("SELECT * FROM students WHERE class_id=? ORDER BY student_code",(cid,)).fetchall()
+        # Add an at-a-glance summary of event notes and net points per student.
+        student_summaries={}
+        for st in students:
+            total=c.execute("SELECT COALESCE(SUM(points),0) FROM student_events WHERE student_id=?",(st["id"],)).fetchone()[0]
+            recent=c.execute("SELECT day,event_type,points,note,subject,lesson FROM student_events WHERE student_id=? ORDER BY day DESC,id DESC LIMIT 3",(st["id"],)).fetchall()
+            all_events=c.execute("SELECT day,event_type,points,note,subject,lesson FROM student_events WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
+            attendance=c.execute("SELECT day,status,note FROM attendance WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
+            student_summaries[st["id"]]={"total_points":total,"recent_events":recent,"all_events":all_events,"attendance":attendance}
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
-    return render_template("class.html", cl=cl, students=students, plans=plans, today=date.today().isoformat())
+    return render_template("class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans, today=date.today().isoformat())
 
 @app.post("/class/<int:cid>/import-tex")
 def import_tex(cid):

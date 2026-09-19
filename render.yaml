@@ -4,4 +4,13 @@ services:
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
-    plan: free
+    plan: starter
+    envVars:
+      - key: DATABASE_PATH
+        value: /var/data/diemdanh.db
+      - key: SECRET_KEY
+        generateValue: true
+    disk:
+      name: diemdanhlophoc-data
+      mountPath: /var/data
+      sizeGB: 1
