@@ -32,35 +32,44 @@ tr.att-late td{background:#fff8e8!important}
 .detail-box{background:white;border:1px solid #e0e7f2;border-radius:10px;padding:12px;min-width:0}
 .detail-box h4{margin:0 0 8px;font-size:14px}.history-item{padding:7px 0;border-bottom:1px dashed #e0e6ef;overflow-wrap:anywhere}
 .history-item:last-child{border:0}.muted{color:#718096}.points{font-weight:800;padding:4px 8px;border-radius:7px;white-space:nowrap}
-@media(max-width:700px){
-  body{margin:0 auto;padding:0 10px;font-size:15px}
-  section{padding:12px;border-radius:12px;margin:12px 0}
-  h1{font-size:24px} h2{font-size:19px}
-  input,select,button,textarea{max-width:100%;min-height:42px}
-  .upload-grid{grid-template-columns:1fr}
-  .quick-head{display:grid;grid-template-columns:1fr;gap:9px}
-  .quick-head label,.quick-head input{width:100%;min-width:0}
-  .table-wrap{overflow:visible;border:0;max-height:none}
-  table,tbody{display:block;width:100%;min-width:0}
-  thead{display:none}
-  tbody tr:not(.detail-row){display:grid;grid-template-columns:1fr;gap:0;margin:0 0 14px;border:1px solid #dfe6f1;border-radius:13px;overflow:hidden;background:#fff;box-shadow:0 2px 9px #1720330a}
-  tbody tr:not(.detail-row) td{display:grid;grid-template-columns:minmax(94px,34%) minmax(0,1fr);gap:10px;align-items:start;min-width:0!important;max-width:none!important;width:100%;padding:10px 12px;border-bottom:1px solid #edf0f5;position:static!important;left:auto!important;box-shadow:none!important;font-size:14px;overflow-wrap:anywhere}
-  tbody tr:not(.detail-row) td:before{content:attr(data-label);font-size:12px;font-weight:750;color:#61708a;line-height:1.45}
-  tbody tr:not(.detail-row) td:nth-child(1){background:#f8faff;font-weight:750}
-  tbody tr:not(.detail-row) td:nth-child(2){background:#f8faff}
-  .student-name{font-size:16px;max-width:100%;overflow-wrap:anywhere;text-align:left}
-  .quick-controls{min-width:0;width:100%}
-  .quick-controls select,.quick-controls input{width:100%;max-width:none;font-size:14px;min-height:42px}
-  .event-checks{grid-template-columns:1fr;min-width:0;width:100%}
-  .event-check{white-space:normal;min-height:38px}
-  .quick-note{max-width:100%!important}
-  .detail-row{display:block;margin:-8px 0 14px}
-  .detail-row td{display:block!important;width:100%;padding:10px!important;position:static!important}
-  .detail-grid{grid-template-columns:1fr}
-  .detail-box{padding:10px}
-  .savebar{position:static;display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:12px;padding:12px}
-  .savebar button{width:100%;min-height:48px;font-size:16px}
-  .savebar span{font-size:13px;line-height:1.5}
+@media(max-width:700px){body{margin:10px auto;padding:0 8px}section{padding:11px;border-radius:11px}.table-wrap{max-height:72vh}th,td{padding:8px 9px;font-size:12px}.detail-grid{grid-template-columns:1fr}.detail-box{padding:10px}th:nth-child(2),td:nth-child(2){left:80px;min-width:150px}}
+
+/* Mobile compact layout: one student per compact card, no wide table */
+@media(max-width:600px){
+ body{max-width:100%;margin:0;padding:7px 7px 88px;font-size:13px}
+ section,.card{margin:8px 0;padding:9px;border-radius:10px}
+ h1{font-size:20px;margin:8px 0} h2{font-size:16px;margin:5px 0 8px}
+ .quick-head{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:7px 0}
+ .quick-head label{font-size:10px;min-width:0}
+ .quick-head label:first-child{grid-column:span 2}
+ .quick-head input{width:100%;max-width:100%;font-size:12px;padding:6px;margin:2px 0}
+ .table-wrap{overflow:visible;max-height:none;border:0;border-radius:0}
+ table,thead,tbody{display:block;width:100%}
+ thead{display:none}
+ tbody tr:not(.detail-row){display:grid;grid-template-columns: minmax(0,1fr) minmax(0,1fr);gap:5px 8px;margin:0 0 7px;padding:8px;border:1px solid #dce5f2;border-radius:9px;background:#fff;box-shadow:0 1px 3px #15284a0a}
+ tbody tr:not(.detail-row) td{display:block;min-width:0!important;max-width:none!important;width:auto!important;padding:0;border:0;position:static!important;background:transparent!important;box-shadow:none!important;font-size:12px;overflow-wrap:anywhere}
+ tbody tr:not(.detail-row) td:nth-child(1){grid-column:1;grid-row:1;font-size:10px;color:#718096}
+ tbody tr:not(.detail-row) td:nth-child(2){grid-column:1 / -1;grid-row:2;font-size:14px;font-weight:700}
+ tbody tr:not(.detail-row) td:nth-child(3){grid-column:1 / -1;grid-row:3}
+ tbody tr:not(.detail-row) td:nth-child(4){grid-column:1 / -1;grid-row:4}
+ tbody tr:not(.detail-row) td:nth-child(5),tbody tr:not(.detail-row) td:nth-child(7),tbody tr:not(.detail-row) td:nth-child(8),tbody tr:not(.detail-row) td:nth-child(9){display:none}
+ tbody tr:not(.detail-row) td:nth-child(6){grid-column:1 / -1;grid-row:5}
+ .quick-controls{min-width:0;width:100%}
+ .quick-controls select,.quick-controls input{width:100%;max-width:100%;padding:7px;font-size:12px;margin:0}
+ .event-checks{min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+ .event-check{white-space:normal;min-width:0;padding:4px 5px;font-size:10px;gap:4px}
+ .event-check b{font-size:10px}
+ .event-check input{flex:0 0 auto;width:14px;height:14px}
+ .quick-note{width:100%!important;max-width:100%!important;font-size:11px;padding:6px;margin:4px 0 0}
+ .student-name{font-size:14px;max-width:100%;overflow-wrap:anywhere}
+ .detail-row td{display:block!important;padding:6px!important}
+ .detail-grid{grid-template-columns:1fr;gap:6px}
+ .detail-box{padding:8px}
+ .savebar{position:fixed;left:7px;right:7px;bottom:7px;padding:7px;gap:7px;box-shadow:0 2px 12px #15284a20;align-items:center}
+ .savebar span{font-size:10px!important;line-height:1.25;flex:1}
+ .savebar button{font-size:12px;padding:9px 10px;max-width:125px;line-height:1.15;margin:0}
+ .upload-grid{grid-template-columns:1fr}
+ input,button,select{max-width:100%}
 }
 </style><body><div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px"><span style="font-size:13px;color:#53627a">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>{% if session.get("can_edit") %}<a href="/change-password">Đổi mật khẩu</a><form method="post" action="/logout" style="margin:0"><button style="padding:7px 12px">Thoát sửa</button></form>{% else %}<a href="/login">Đăng nhập chỉnh sửa</a>{% endif %}</div><p><a href="/">← Danh sách lớp</a></p><h1>Lớp {{cl.name}}</h1>{% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}<section><h2>Nhập / cập nhật danh sách học sinh</h2>
 <p class="muted">Có thể tải mẫu Excel, điền rồi tải lên; hoặc dán trực tiếp danh sách dạng mỗi dòng: Mã HS, Họ tên, Ngày sinh, Giới tính, Điện thoại HS, Tên phụ huynh, Điện thoại phụ huynh, Ghi chú (ngăn cách bằng tab hoặc dấu phẩy). Mã đã có sẽ cập nhật, mã mới sẽ thêm; lịch sử được giữ.</p>
