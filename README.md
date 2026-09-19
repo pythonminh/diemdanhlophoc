@@ -1,23 +1,22 @@
-# Điểm danh Thầy Minh — MVP
+# Điểm danh lớp học
 
-## Chạy trên máy
+## Chạy local
 ```bash
 python -m venv .venv
-# Windows: .venv\\Scripts\\activate
-# Ubuntu: source .venv/bin/activate
+source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
 Mở http://127.0.0.1:5000
 
-## Nhập dữ liệu
-Mỗi file `.tex` là một lớp; tên file là tên lớp, ví dụ `12QT1.tex`. Parser lấy dòng có 5 cột `STT & Mã HS & Họ tên & Ngày sinh & Ghi chú \\` và bỏ qua header longtable.
+## Deploy Render
+Tạo Web Service từ GitHub repo, Build Command `pip install -r requirements.txt`, Start Command `gunicorn app:app`.
+Để giữ dữ liệu qua lần deploy, gắn Persistent Disk và đặt `DATABASE_PATH` tới file trên disk (ví dụ `/var/data/diemdanh.db`).
 
-## MVP hiện có
-- Nhập nhiều file `.tex` cùng lúc, cập nhật học sinh theo mã HS.
-- Danh sách lớp và số học sinh.
-- Điểm danh theo ngày/tiết, lưu SQLite.
-- Xuất danh sách `.tex`.
+## Chức năng
+- Tạo lớp; lưu năm học và thông tin GVCN.
+- Thêm học sinh trực tiếp khi danh sách thiếu; sửa mã, họ tên và liên hệ.
+- Hồ sơ từng học sinh, lịch sử điểm danh, hoạt động và điểm cộng/trừ.
+- Kế hoạch dạy học theo môn, bài, ngày, tiết.
 
-## Chưa có trong bản đầu
-Đăng nhập/phân quyền, chỉnh sửa trực tiếp toàn bộ hồ sơ trên bảng, báo cáo nâng cao, đồng bộ Google Sheets, sao lưu tự động và triển khai Render. Cần bổ sung trước khi dùng dữ liệu thật trên môi trường nhiều người dùng.
+**Bảo mật:** bản này chưa có đăng nhập/phân quyền. Không nhập số điện thoại thật của học sinh/phụ huynh trên đường dẫn công khai cho đến khi bổ sung xác thực và bảo vệ dữ liệu.

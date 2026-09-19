@@ -1,127 +1,127 @@
-from flask import Flask, request, redirect, url_for, render_template, flash, send_file
-from werkzeug.utils import secure_filename
-import sqlite3, re, os, io
+from flask import Flask, render_template, request, redirect, url_for, flash
+import sqlite3, os, re
 from datetime import date
 
-app=Flask(__name__)
-app.secret_key=os.environ.get("SECRET_KEY","change-me")
-DB=os.environ.get("DATABASE_PATH","attendance.db")
-UPLOAD=os.path.join(os.path.dirname(__file__),"uploads")
-os.makedirs(UPLOAD,exist_ok=True)
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
+DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
 
 def db():
-    con=sqlite3.connect(DB)
-    con.row_factory=sqlite3.Row
-    return con
+    conn=sqlite3.connect(DB_PATH)
+    conn.row_factory=sqlite3.Row
+    return conn
 
 def init_db():
     with db() as c:
         c.executescript("""
-        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE, school_year TEXT);
-        CREATE TABLE IF NOT EXISTS students(id INTEGER PRIMARY KEY, class_id INTEGER, stt TEXT, code TEXT, name TEXT, dob TEXT, note TEXT,
-        UNIQUE(class_id,code), FOREIGN KEY(class_id) REFERENCES classes(id));
-        CREATE TABLE IF NOT EXISTS attendance(id INTEGER PRIMARY KEY, student_id INTEGER, day TEXT, period TEXT, status TEXT,
-        UNIQUE(student_id,day,period), FOREIGN KEY(student_id) REFERENCES students(id));
+        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, school_year TEXT DEFAULT '', homeroom_teacher TEXT DEFAULT '', teacher_phone TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS students(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, student_code TEXT NOT NULL, name TEXT NOT NULL, phone TEXT DEFAULT '', parent_name TEXT DEFAULT '', parent_phone TEXT DEFAULT '', FOREIGN KEY(class_id) REFERENCES classes(id), UNIQUE(class_id,student_code));
+        CREATE TABLE IF NOT EXISTS attendance(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL, note TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS student_events(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, event_type TEXT NOT NULL, points REAL DEFAULT 0, note TEXT DEFAULT '', subject TEXT DEFAULT '', lesson TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS lesson_plans(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, subject TEXT NOT NULL, lesson TEXT NOT NULL, day TEXT DEFAULT '', period TEXT DEFAULT '', note TEXT DEFAULT '');
         """)
 init_db()
 
-def clean_tex(s):
-    return s.replace(r'\&','&').replace(r'\%','%').replace(r'\_','_').strip()
-
-def parse_longtable(src):
-    # Read ordinary rows: STT & code & name & date & note \\
-    rows=[]
-    for line in src.splitlines():
-        line=line.strip()
-        if not line or line.startswith("%") or "&" not in line or r"\\" not in line:
-            continue
-        if any(x in line for x in (r"\multicolumn",r"\textbf",r"\endhead",r"\endfoot",r"\endlastfoot")):
-            continue
-        body=line.split(r"\\",1)[0].strip()
-        cells=[clean_tex(x) for x in body.split("&")]
-        if len(cells) < 5: continue
-        stt,code,name,dob,note=cells[:5]
-        if not stt.isdigit() or not re.fullmatch(r"HS[\w-]+",code,re.I):
-            continue
-        rows.append((stt,code,name,dob,note))
-    return rows
-
 @app.route("/")
 def index():
-    with db() as c:
-        classes=c.execute("SELECT cl.*, COUNT(s.id) n FROM classes cl LEFT JOIN students s ON s.class_id=cl.id GROUP BY cl.id ORDER BY cl.name").fetchall()
-    return render_template("index.html",classes=classes)
+    with db() as c: classes=c.execute("SELECT * FROM classes ORDER BY name").fetchall()
+    return render_template("index.html", classes=classes)
 
-@app.route("/import",methods=["POST"])
-def import_tex():
-    files=request.files.getlist("files")
-    imported=0
-    with db() as c:
-        for f in files:
-            if not f or not f.filename: continue
-            filename=secure_filename(f.filename)
-            if not filename.lower().endswith(".tex"):
-                flash(f"Bỏ qua {filename}: chỉ nhận file .tex"); continue
-            content=f.read().decode("utf-8-sig",errors="replace")
-            rows=parse_longtable(content)
-            if not rows:
-                flash(f"Không tìm thấy dòng học sinh hợp lệ trong {filename}"); continue
-            class_name=os.path.splitext(filename)[0]
-            c.execute("INSERT OR IGNORE INTO classes(name,school_year) VALUES(?,?)",(class_name,""))
-            cid=c.execute("SELECT id FROM classes WHERE name=?",(class_name,)).fetchone()["id"]
-            for row in rows:
-                c.execute("""INSERT INTO students(class_id,stt,code,name,dob,note) VALUES(?,?,?,?,?,?)
-                ON CONFLICT(class_id,code) DO UPDATE SET stt=excluded.stt,name=excluded.name,dob=excluded.dob,note=excluded.note""",(cid,*row))
-            imported+=1
-    flash(f"Đã nhập/cập nhật {imported} file.")
+@app.post("/class/add")
+def add_class():
+    name=request.form.get("name","").strip()
+    if not name: flash("Nhập tên lớp."); return redirect(url_for("index"))
+    try:
+        with db() as c: c.execute("INSERT INTO classes(name) VALUES(?)",(name,))
+        flash("Đã tạo lớp.")
+    except sqlite3.IntegrityError: flash("Lớp đã tồn tại.")
     return redirect(url_for("index"))
 
 @app.route("/class/<int:cid>")
-def class_view(cid):
-    day=request.args.get("day",date.today().isoformat())
-    period=request.args.get("period","1")
+def class_page(cid):
     with db() as c:
         cl=c.execute("SELECT * FROM classes WHERE id=?",(cid,)).fetchone()
         if not cl: return "Không tìm thấy lớp",404
-        students=c.execute("""SELECT s.*, COALESCE(a.status,'Chưa điểm danh') status FROM students s
-        LEFT JOIN attendance a ON a.student_id=s.id AND a.day=? AND a.period=?
-        WHERE s.class_id=? ORDER BY CAST(s.stt AS INTEGER),s.id""",(day,period,cid)).fetchall()
-    return render_template("class.html",cl=cl,students=students,day=day,period=period)
+        students=c.execute("SELECT * FROM students WHERE class_id=? ORDER BY student_code",(cid,)).fetchall()
+        plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
+    return render_template("class.html", cl=cl, students=students, plans=plans, today=date.today().isoformat())
 
-@app.route("/attendance/<int:cid>",methods=["POST"])
-def save_attendance(cid):
-    day=request.form.get("day",date.today().isoformat()); period=request.form.get("period","1")
-    with db() as c:
-        for key,status in request.form.items():
-            if key.startswith("status_"):
-                sid=int(key[7:])
-                c.execute("""INSERT INTO attendance(student_id,day,period,status) VALUES(?,?,?,?)
-                ON CONFLICT(student_id,day,period) DO UPDATE SET status=excluded.status""",(sid,day,period,status))
-    flash("Đã lưu điểm danh.")
-    return redirect(url_for("class_view",cid=cid,day=day,period=period))
+@app.post("/class/<int:cid>/student/add")
+def add_student(cid):
+    code=request.form.get("student_code","").strip()
+    name=request.form.get("name","").strip()
+    if not code or not name:
+        flash("Cần nhập mã học sinh và họ tên.")
+        return redirect(url_for("class_page",cid=cid))
+    try:
+        with db() as c:
+            exists=c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone()
+            if not exists: return "Không tìm thấy lớp",404
+            c.execute("""INSERT INTO students(class_id,student_code,name,phone,parent_name,parent_phone)
+                         VALUES(?,?,?,?,?,?)""",(cid,code,name,request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip()))
+        flash("Đã thêm học sinh.")
+    except sqlite3.IntegrityError:
+        flash("Mã học sinh này đã có trong lớp. Hãy mở hồ sơ để chỉnh sửa.")
+    return redirect(url_for("class_page",cid=cid))
 
-@app.route("/student/<int:sid>/edit",methods=["POST"])
+@app.post("/student/<int:sid>/edit")
 def edit_student(sid):
+    name=request.form.get("name","").strip()
+    code=request.form.get("student_code","").strip()
+    if not name or not code:
+        flash("Mã học sinh và họ tên không được để trống.")
+        return redirect(url_for("student_page",sid=sid))
     with db() as c:
-        c.execute("UPDATE students SET name=?,code=?,dob=?,note=? WHERE id=?",
-                  (request.form["name"],request.form["code"],request.form["dob"],request.form["note"],sid))
-        cid=c.execute("SELECT class_id FROM students WHERE id=?",(sid,)).fetchone()["class_id"]
-    flash("Đã cập nhật học sinh.")
-    return redirect(url_for("class_view",cid=cid))
+        row=c.execute("SELECT class_id FROM students WHERE id=?",(sid,)).fetchone()
+        if not row: return "Không tìm thấy học sinh",404
+        try:
+            c.execute("""UPDATE students SET student_code=?,name=?,phone=?,parent_name=?,parent_phone=? WHERE id=?""",
+                      (code,name,request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip(),sid))
+            flash("Đã cập nhật hồ sơ. Lịch sử vẫn được giữ nguyên.")
+        except sqlite3.IntegrityError: flash("Mã học sinh bị trùng trong lớp.")
+    return redirect(url_for("student_page",sid=sid))
 
-@app.route("/class/<int:cid>/export")
-def export_tex(cid):
+@app.route("/student/<int:sid>")
+def student_page(sid):
     with db() as c:
-        cl=c.execute("SELECT * FROM classes WHERE id=?",(cid,)).fetchone()
-        students=c.execute("SELECT * FROM students WHERE class_id=? ORDER BY CAST(stt AS INTEGER)",(cid,)).fetchall()
-    if not cl: return "Không tìm thấy lớp",404
-    out=[r"\documentclass[12pt,a4paper]{book}",r"\usepackage[utf8]{inputenc}",r"\usepackage[T5]{fontenc}",r"\usepackage[vietnamese]{babel}",r"\usepackage{longtable,booktabs,array}",r"\begin{document}",r"\begin{center}\Large\textbf{DANH SÁCH HỌC SINH}\\",r"\textbf{Lớp:} "+cl["name"],r"\end{center}",r"\begin{longtable}{@{} c c p{6cm} c p{3.5cm} @{}}",r"\toprule STT & Mã HS & Họ và Tên & Ngày sinh & Ghi chú \\",r"\midrule"]
-    for i,s in enumerate(students,1):
-        vals=[str(i),s["code"],s["name"],s["dob"],s["note"] or ""]
-        vals=[v.replace("&",r"\&") for v in vals]
-        out.append(" & ".join(vals)+r" \\")
-    out += [r"\bottomrule",r"\end{longtable}",r"\end{document}"]
-    return send_file(io.BytesIO("\n".join(out).encode("utf-8")),as_attachment=True,download_name=cl["name"]+".tex",mimetype="text/plain; charset=utf-8")
+        s=c.execute("SELECT students.*,classes.name AS class_name FROM students JOIN classes ON classes.id=students.class_id WHERE students.id=?",(sid,)).fetchone()
+        if not s: return "Không tìm thấy học sinh",404
+        events=c.execute("SELECT * FROM student_events WHERE student_id=? ORDER BY day DESC,id DESC",(sid,)).fetchall()
+        attendance=c.execute("SELECT * FROM attendance WHERE student_id=? ORDER BY day DESC,id DESC",(sid,)).fetchall()
+    return render_template("student.html",s=s,events=events,attendance=attendance,today=date.today().isoformat())
+
+@app.post("/student/<int:sid>/event")
+def add_event(sid):
+    with db() as c:
+        if not c.execute("SELECT id FROM students WHERE id=?",(sid,)).fetchone(): return "Không tìm thấy học sinh",404
+        c.execute("INSERT INTO student_events(student_id,day,event_type,points,note,subject,lesson) VALUES(?,?,?,?,?,?,?)",
+        (sid,request.form.get("day") or date.today().isoformat(),request.form.get("event_type","").strip(),float(request.form.get("points") or 0),request.form.get("note","").strip(),request.form.get("subject","").strip(),request.form.get("lesson","").strip()))
+    flash("Đã ghi nhận sự kiện.")
+    return redirect(url_for("student_page",sid=sid))
+
+@app.post("/class/<int:cid>/plan")
+def add_plan(cid):
+    with db() as c:
+        c.execute("INSERT INTO lesson_plans(class_id,subject,lesson,day,period,note) VALUES(?,?,?,?,?,?)",
+        (cid,request.form.get("subject","").strip(),request.form.get("lesson","").strip(),request.form.get("day",""),request.form.get("period","").strip(),request.form.get("note","").strip()))
+    flash("Đã lưu kế hoạch bài dạy.")
+    return redirect(url_for("class_page",cid=cid))
+
+@app.post("/class/<int:cid>/settings")
+def settings(cid):
+    with db() as c:
+        c.execute("UPDATE classes SET school_year=?,homeroom_teacher=?,teacher_phone=? WHERE id=?",
+        (request.form.get("school_year",""),request.form.get("homeroom_teacher",""),request.form.get("teacher_phone",""),cid))
+    flash("Đã lưu thông tin lớp.")
+    return redirect(url_for("class_page",cid=cid))
+
+@app.post("/student/<int:sid>/attendance")
+def mark_attendance(sid):
+    with db() as c:
+        c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",
+        (sid,request.form.get("day") or date.today().isoformat(),request.form.get("status",""),request.form.get("note","").strip()))
+    flash("Đã ghi nhận điểm danh.")
+    return redirect(url_for("student_page",sid=sid))
 
 if __name__=="__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0",port=int(os.environ.get("PORT",5000)))
