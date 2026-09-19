@@ -39,7 +39,7 @@ textarea{resize:vertical;min-height:42px}
 @media(max-width:460px){.wrap{padding:18px 12px 36px}.field,.field.wide{grid-column:1/-1}.panel{border-radius:13px}.entry{padding:11px}.points{padding:4px 7px}}
 </style>
 </head>
-<body><main class="wrap">
+<body><div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px"><span style="font-size:13px;color:#53627a">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>{% if session.get("can_edit") %}<a href="/change-password">Đổi mật khẩu</a><form method="post" action="/logout" style="margin:0"><button style="padding:7px 12px">Thoát sửa</button></form>{% else %}<a href="/login">Đăng nhập chỉnh sửa</a>{% endif %}</div><main class="wrap">
 <a class="back" href="/class/{{s.class_id}}">← Quay lại lớp {{s.class_name}}</a>
 <header class="head"><div><div class="eyebrow">Hồ sơ học sinh</div><h1>{{s.name}}</h1><div class="sub">Mã học sinh: <b>{{s.student_code}}</b> · Lớp {{s.class_name}}</div></div><span class="pill">Hồ sơ cá nhân</span></header>
 {% for m in get_flashed_messages() %}<div class="flash">{{m}}</div>{% endfor %}
