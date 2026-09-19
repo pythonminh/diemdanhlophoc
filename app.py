@@ -3,7 +3,21 @@ import sqlite3, os, re
 from datetime import date
 from io import BytesIO
 import csv
-
+EVENT_DEFAULTS = {
+    "Xung phong": 1,
+    "Tích cực": 1,
+    "Hoàn thành tốt": 1,
+    "Giúp đỡ bạn": 1,
+    "Nói chuyện": -1,
+    "Làm ồn": -1,
+    "Chưa làm bài tập": -1,
+    "Không làm bài": -2,
+    "Không ghi bài": -1,
+    "Vô lễ": -3,
+    "Điện thoại trong giờ": -2,
+    "Không chuẩn bị bài": -1,
+    "Khác": 0,
+}
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
 DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
