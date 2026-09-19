@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hồ sơ {{s.name}}</title>
+<style>
+:root{--ink:#17243b;--muted:#6b7890;--line:#e2e8f0;--blue:#315de8;--bg:#f3f6fb;--green:#13845b;--red:#c43d4b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Arial,sans-serif;color:var(--ink)}
+.wrap{max-width:1100px;margin:0 auto;padding:26px 18px 56px}
+.back{display:inline-flex;gap:8px;align-items:center;color:#315de8;text-decoration:none;font-weight:650;margin-bottom:16px}
+.head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.eyebrow{font-size:12px;font-weight:750;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:clamp(25px,4vw,34px);line-height:1.2;margin:4px 0 8px;letter-spacing:-.025em}
+.sub{color:var(--muted);font-size:14px}
+.pill{display:inline-flex;align-items:center;background:#e8edff;color:#294dc8;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700}
+.flash{background:#eaf8f1;border:1px solid #b9e6d0;color:#176342;padding:11px 14px;border-radius:10px;margin:12px 0}
+.layout{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.panel{background:#fff;border:1px solid #e8edf5;border-radius:16px;padding:clamp(16px,2.5vw,24px);box-shadow:0 5px 18px #20345a08}
+.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:17px}
+.panel h2{font-size:19px;letter-spacing:-.015em;margin:0 0 4px}
+.hint{margin:0;color:var(--muted);font-size:13px}
+.form-grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:13px}
+.field{grid-column:span 3;min-width:0}.field.wide{grid-column:span 6}.field.full{grid-column:1/-1}
+label{display:block;font-size:12px;font-weight:750;color:#596780;margin:0 0 6px}
+input,select,textarea{display:block;width:100%;min-width:0;border:1px solid #d6deeb;border-radius:9px;background:#fff;color:var(--ink);font:inherit;padding:10px 12px;min-height:42px;outline:none;transition:border-color .15s,box-shadow .15s}
+input:focus,select:focus,textarea:focus{border-color:#7e9af8;box-shadow:0 0 0 3px #315de81a}
+textarea{resize:vertical;min-height:42px}
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:15px}
+.btn{border:0;border-radius:9px;padding:10px 17px;font:700 14px system-ui;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn.primary{background:var(--blue);color:white;box-shadow:0 3px 8px #315de82b}.btn.primary:hover{background:#244bd0}
+.history{display:grid;gap:10px;margin-top:15px}
+.entry{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:#fbfcff}
+.dot{width:9px;height:9px;border-radius:50%;background:#7b91cb;flex:none;margin-top:7px}
+.entry-main{min-width:0;flex:1}.entry-title{font-weight:700}.entry-meta{font-size:13px;color:var(--muted);margin-top:3px;overflow-wrap:anywhere}
+.points{font-size:13px;font-weight:800;padding:4px 9px;border-radius:8px;background:#edf8f2;color:var(--green);white-space:nowrap}
+.points.negative{background:#fff0f1;color:var(--red)}
+.empty{padding:22px;text-align:center;color:var(--muted);border:1px dashed #d7dfeb;border-radius:11px;background:#fafcff}
+@media(max-width:760px){.field{grid-column:span 6}.field.wide{grid-column:span 12}.panel-head{display:block}}
+@media(max-width:460px){.wrap{padding:18px 12px 36px}.field,.field.wide{grid-column:1/-1}.panel{border-radius:13px}.entry{padding:11px}.points{padding:4px 7px}}
+</style>
+</head>
+<body><main class="wrap">
+<a class="back" href="/class/{{s.class_id}}">← Quay lại lớp {{s.class_name}}</a>
+<header class="head"><div><div class="eyebrow">Hồ sơ học sinh</div><h1>{{s.name}}</h1><div class="sub">Mã học sinh: <b>{{s.student_code}}</b> · Lớp {{s.class_name}}</div></div><span class="pill">Hồ sơ cá nhân</span></header>
+{% for m in get_flashed_messages() %}<div class="flash">{{m}}</div>{% endfor %}
+<div class="layout">
+<section class="panel">
+<div class="panel-head"><div><h2>Thông tin học sinh</h2><p class="hint">Cập nhật thông tin liên hệ và hồ sơ.</p></div></div>
+<form method="post" action="/student/{{s.id}}/edit">
+<div class="form-grid">
+<div class="field"><label>Mã học sinh *</label><input name="student_code" value="{{s.student_code}}" required></div>
+<div class="field wide"><label>Họ và tên *</label><input name="name" value="{{s.name}}" required></div>
+<div class="field"><label>Ngày sinh</label><input type="date" name="birth_date" value="{{s.birth_date}}"></div>
+<div class="field"><label>Giới tính</label><input name="gender" value="{{s.gender}}" placeholder="Nam / Nữ"></div>
+<div class="field"><label>Điện thoại học sinh</label><input name="phone" value="{{s.phone}}" placeholder="Số điện thoại"></div>
+<div class="field wide"><label>Họ tên phụ huynh</label><input name="parent_name" value="{{s.parent_name}}" placeholder="Họ và tên phụ huynh"></div>
+<div class="field"><label>Điện thoại phụ huynh</label><input name="parent_phone" value="{{s.parent_phone}}" placeholder="Số điện thoại"></div>
+<div class="field full"><label>Ghi chú</label><input name="note" value="{{s.note}}" placeholder="Thông tin cần lưu ý"></div>
+</div><div class="actions"><button class="btn primary">Lưu thay đổi</button></div>
+</form><p class="hint" style="margin-top:12px">Cập nhật hồ sơ không xóa lịch sử điểm danh hay hoạt động.</p>
+</section>
+<section class="panel">
+<div class="panel-head"><div><h2>Điểm danh</h2><p class="hint">Ghi nhận trạng thái theo ngày.</p></div></div>
+<form method="post" action="/student/{{s.id}}/attendance">
+<div class="form-grid">
+<div class="field"><label>Ngày</label><input type="date" name="day" value="{{today}}"></div>
+<div class="field wide"><label>Trạng thái</label><select name="status"><option>Có mặt</option><option>Vắng có phép</option><option>Vắng không phép</option><option>Đi trễ</option></select></div>
+<div class="field full"><label>Ghi chú</label><input name="note" placeholder="Ghi chú (nếu có)"></div>
+</div><div class="actions"><button class="btn primary">＋ Ghi nhận điểm danh</button></div>
+</form>
+<div class="history">{% for a in attendance %}<article class="entry"><span class="dot"></span><div class="entry-main"><div class="entry-title">{{a.status}}</div><div class="entry-meta">{{a.day}}{% if a.note %} · {{a.note}}{% endif %}</div></div></article>{% else %}<div class="empty">Chưa có dữ liệu điểm danh.</div>{% endfor %}</div>
+</section>
+<section class="panel">
+<div class="panel-head"><div><h2>Hoạt động & điểm thưởng/phạt</h2><p class="hint">Ghi nhận xung phong, tích cực, vi phạm và điểm cộng/trừ.</p></div></div>
+<form method="post" action="/student/{{s.id}}/event">
+<div class="form-grid">
+<div class="field"><label>Ngày</label><input type="date" name="day" value="{{today}}"></div>
+<div class="field wide"><label>Hoạt động</label><select name="event_type">
+<option>Xung phong</option><option>Tích cực</option><option>Làm tốt lý thuyết</option><option>Làm chưa tốt lý thuyết</option><option>Làm tốt bài tập</option><option>Làm chưa tốt bài tập</option><option>Chưa làm được bài tập</option><option>Làm tốt bài áp dụng</option><option>Làm tốt bài nâng cao</option><option>Làm ồn</option><option>Nói chuyện</option><option>Không làm bài</option><option>Không ghi bài</option><option>Chưa làm bài tập</option><option>Vô lễ</option><option>Bị phạt</option><option>Khác</option></select></div>
+<div class="field"><label>Điểm (+ / −)</label><input type="number" step="0.5" name="points" value="0"></div>
+<div class="field"><label>Môn học</label><input name="subject" placeholder="VD: Vật lý"></div>
+<div class="field"><label>Bài / tiết</label><input name="lesson" placeholder="VD: Bài 2, tiết 3"></div>
+<div class="field full"><label>Ghi chú</label><input name="note" placeholder="Nội dung ghi nhận (không bắt buộc)"></div>
+</div><div class="actions"><button class="btn primary">＋ Lưu hoạt động</button></div>
+</form>
+<div class="history">{% for e in events %}<article class="entry"><span class="dot"></span><div class="entry-main"><div class="entry-title">{{e.event_type}}</div><div class="entry-meta">{{e.day}}{% if e.subject %} · {{e.subject}}{% endif %}{% if e.lesson %} · {{e.lesson}}{% endif %}{% if e.note %}<br>{{e.note}}{% endif %}</div></div><span class="points {% if e.points < 0 %}negative{% endif %}">{{'+' if e.points > 0 else ''}}{{e.points}}</span></article>{% else %}<div class="empty">Chưa có lịch sử hoạt động.</div>{% endfor %}</div>
+</section>
+</div></main></body></html>
