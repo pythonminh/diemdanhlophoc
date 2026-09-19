@@ -1,17 +1,83 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
-import sqlite3, os, re
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+import sqlite3, os, re, hashlib, hmac
+from datetime import timedelta
 from datetime import date
 from io import BytesIO
 import csv
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
 DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
 
 def db():
     conn=sqlite3.connect(DB_PATH)
     conn.row_factory=sqlite3.Row
     return conn
+
+
+def password_hash(password, salt=None):
+    salt = salt or os.urandom(16).hex()
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 240000).hex()
+    return salt, digest
+
+def verify_password(password, salt, digest):
+    return hmac.compare_digest(password_hash(password, salt)[1], digest)
+
+@app.before_request
+def require_edit_password_for_mutations():
+    if request.method == "POST" and request.endpoint != "login" and not session.get("can_edit"):
+        flash("Cần đăng nhập bằng mật khẩu chỉnh sửa để thao tác.")
+        return redirect(url_for("login", next=request.path))
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        with db() as c:
+            saltrow=c.execute("SELECT value FROM app_settings WHERE key='edit_password_salt'").fetchone()
+            hashrow=c.execute("SELECT value FROM app_settings WHERE key='edit_password_hash'").fetchone()
+        if saltrow and hashrow and verify_password(password, saltrow["value"], hashrow["value"]):
+            session.clear()
+            session["can_edit"] = True
+            session.permanent = request.form.get("remember") == "yes"
+            flash("Đã mở quyền chỉnh sửa. " + ("Thiết bị này sẽ ghi nhớ đăng nhập tối đa 30 ngày." if session.permanent else "Chỉ giữ đăng nhập trong phiên hiện tại."))
+            next_url = request.form.get("next", "")
+            # Only allow local relative paths to prevent open redirects.
+            if not next_url.startswith("/") or next_url.startswith("//"):
+                next_url = url_for("index")
+            return redirect(next_url)
+        flash("Mật khẩu không đúng.")
+    return render_template("login.html", next=request.args.get("next", ""))
+
+@app.post("/logout")
+def logout():
+    session.clear()
+    flash("Đã thoát chế độ chỉnh sửa; hiện chỉ xem.")
+    return redirect(request.referrer or url_for("index"))
+
+@app.route("/change-password", methods=["GET", "POST"])
+def change_password():
+    if not session.get("can_edit"):
+        return redirect(url_for("login", next=url_for("change_password")))
+    if request.method == "POST":
+        new=request.form.get("new_password","")
+        confirm=request.form.get("confirm_password","")
+        if len(new)<10: flash("Mật khẩu mới phải có ít nhất 10 ký tự.")
+        elif new!=confirm: flash("Hai mật khẩu nhập lại không khớp.")
+        else:
+            salt,digest=password_hash(new)
+            with db() as c:
+                c.execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES('edit_password_salt',?)",(salt,))
+                c.execute("INSERT OR REPLACE INTO app_settings(key,value) VALUES('edit_password_hash',?)",(digest,))
+            flash("Đã đổi mật khẩu chỉnh sửa.")
+            return redirect(url_for("index"))
+    return render_template("change_password.html")
 
 def init_db():
     with db() as c:
@@ -21,7 +87,12 @@ def init_db():
         CREATE TABLE IF NOT EXISTS attendance(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL, note TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS student_events(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, event_type TEXT NOT NULL, points REAL DEFAULT 0, note TEXT DEFAULT '', subject TEXT DEFAULT '', lesson TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS lesson_plans(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, subject TEXT NOT NULL, lesson TEXT NOT NULL, day TEXT DEFAULT '', period TEXT DEFAULT '', note TEXT DEFAULT '');
+        CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """)
+        if not c.execute("SELECT 1 FROM app_settings WHERE key='edit_password_hash'").fetchone():
+            salt, digest = password_hash(os.environ.get("EDIT_PASSWORD", "DoiMatKhauNgay123!"))
+            c.execute("INSERT INTO app_settings(key,value) VALUES('edit_password_salt',?)",(salt,))
+            c.execute("INSERT INTO app_settings(key,value) VALUES('edit_password_hash',?)",(digest,))
         # Migrate DB created by earlier versions without losing records.
         cols={r["name"] for r in c.execute("PRAGMA table_info(students)").fetchall()}
         for name,typ in [("birth_date","TEXT DEFAULT ''"),("gender","TEXT DEFAULT ''"),("note","TEXT DEFAULT ''"),("phone","TEXT DEFAULT ''"),("parent_name","TEXT DEFAULT ''"),("parent_phone","TEXT DEFAULT ''")]:
