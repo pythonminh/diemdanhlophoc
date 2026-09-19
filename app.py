@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 import sqlite3, os, re
 from datetime import date
+from io import BytesIO
+import csv
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
@@ -96,7 +98,7 @@ def class_page(cid):
             attendance=c.execute("SELECT day,status,note FROM attendance WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
             student_summaries[st["id"]]={"total_points":total,"recent_events":recent,"all_events":all_events,"attendance":attendance}
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
-    return render_template("class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans, today=date.today().isoformat())
+    return render_template("class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans, today=date.today().isoformat(), event_defaults=EVENT_DEFAULTS)
 
 
 @app.post("/class/<int:cid>/bulk-record")
@@ -104,29 +106,28 @@ def bulk_record(cid):
     day=request.form.get("day") or date.today().isoformat()
     subject=request.form.get("subject","").strip()
     lesson=request.form.get("lesson","").strip()
-    saved_att= saved_events=0
+    saved_att=saved_events=0
     with db() as c:
+        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone(): return "Không tìm thấy lớp",404
         students=c.execute("SELECT id FROM students WHERE class_id=?",(cid,)).fetchall()
-        if not students: 
-            flash("Lớp chưa có học sinh.")
-            return redirect(url_for("class_page",cid=cid))
         for st in students:
             sid=st["id"]
             status=request.form.get(f"attendance_{sid}","").strip()
-            event_type=request.form.get(f"event_{sid}","").strip()
             note=request.form.get(f"note_{sid}","").strip()
             if status:
-                c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",
-                          (sid,day,status,note))
+                c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",(sid,day,status,note))
                 saved_att+=1
-            if event_type:
-                try: points=float(request.form.get(f"points_{sid}") or 0)
-                except ValueError: points=0
+            for packed in request.form.getlist(f"events_{sid}"):
+                try: event_type,points_s=packed.rsplit("|",1); points=float(points_s)
+                except Exception: event_type,points=packed,0
+                custom=request.form.get(f"points_{sid}_{re.sub(r'[^A-Za-z0-9]+','_',event_type)}")
+                if custom not in (None,""):
+                    try: points=float(custom)
+                    except ValueError: pass
                 c.execute("""INSERT INTO student_events(student_id,day,event_type,points,note,subject,lesson)
-                             VALUES(?,?,?,?,?,?,?)""",
-                          (sid,day,event_type,points,note,subject,lesson))
+                             VALUES(?,?,?,?,?,?,?)""",(sid,day,event_type,points,note,subject,lesson))
                 saved_events+=1
-    flash(f"Đã lưu nhanh: {saved_att} lượt điểm danh, {saved_events} hoạt động/vi phạm. Có thể xem lại trong lịch sử từng học sinh.")
+    flash(f"Đã lưu: {saved_att} lượt điểm danh, {saved_events} hoạt động/vi phạm. Có thể xem lại trong hồ sơ từng học sinh.")
     return redirect(url_for("class_page",cid=cid))
 
 @app.post("/class/<int:cid>/import-tex")

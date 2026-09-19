@@ -23,3 +23,9 @@ Bảng danh sách hiển thị 3 ghi nhận gần nhất (hoạt động/lỗi v
 \n## Bảng lớp có cột tên cố định và chi tiết mở rộng\n- Bảng có thể cuộn ngang; cột mã HS và họ tên được ghim bên trái.\n- Nhấn vào tên học sinh để mở/thu gọn một vùng chi tiết ngay bên dưới, gồm toàn bộ lịch sử hoạt động/vi phạm, ghi chú, điểm cộng-trừ, lịch sử điểm danh và tổng điểm lũy kế.\n- Liên kết mở hồ sơ dùng để sửa thông tin hoặc nhập ghi nhận mới.\n
 ## Ghi nhận nhanh cả lớp (v8)
 Trong trang lớp, mỗi dòng học sinh có lựa chọn điểm danh và lựa chọn hoạt động/vi phạm, điểm cộng-trừ và ghi chú riêng. Ngày, môn, bài/tiết có thể nhập chung phía trên. Nhấn “Lưu ghi nhận cả lớp” để lưu các mục đã chọn cùng lúc; lựa chọn để trống sẽ không tạo bản ghi. Các mục được lưu vào bảng attendance và student_events để xem lại trong hồ sơ học sinh.
+
+## v9: điểm danh nhanh nhiều tình huống và nhập Excel/văn bản
+- Từng dòng có dropdown điểm danh; khi chọn Có mặt sẽ tô xanh, vắng có/không phép tô đỏ, đi trễ tô vàng.
+- Hoạt động/vi phạm chuyển thành danh sách checkbox đa lựa chọn. Mỗi mục có điểm mặc định: xung phong/tích cực điểm dương; lỗi như nói chuyện, không làm bài, không ghi bài, vô lễ điểm âm. Có thể tích nhiều mục cho cùng học sinh trong một lần lưu.
+- Có thể tải `mau_danh_sach_hoc_sinh.xlsx`, điền danh sách và upload; hoặc dán văn bản theo thứ tự cột hướng dẫn trên trang lớp. Mã HS trùng sẽ cập nhật hồ sơ, mã mới sẽ thêm, các lịch sử đã lưu không bị xóa.
+- Cần cài `openpyxl` (đã thêm vào requirements.txt) để đọc và tạo Excel.
