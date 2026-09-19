@@ -21,3 +21,5 @@ Bảng danh sách hiển thị 3 ghi nhận gần nhất (hoạt động/lỗi v
 - Persistent Disk thường yêu cầu gói Render trả phí. Nếu dùng filesystem tạm, dữ liệu có thể mất khi deploy/restart.
 - Để giám sát từ xa an toàn cần bổ sung đăng nhập/phân quyền và sao lưu. Bản này chưa có đăng nhập; không đưa thông tin liên hệ thật lên ứng dụng công khai.
 \n## Bảng lớp có cột tên cố định và chi tiết mở rộng\n- Bảng có thể cuộn ngang; cột mã HS và họ tên được ghim bên trái.\n- Nhấn vào tên học sinh để mở/thu gọn một vùng chi tiết ngay bên dưới, gồm toàn bộ lịch sử hoạt động/vi phạm, ghi chú, điểm cộng-trừ, lịch sử điểm danh và tổng điểm lũy kế.\n- Liên kết mở hồ sơ dùng để sửa thông tin hoặc nhập ghi nhận mới.\n
+## Ghi nhận nhanh cả lớp (v8)
+Trong trang lớp, mỗi dòng học sinh có lựa chọn điểm danh và lựa chọn hoạt động/vi phạm, điểm cộng-trừ và ghi chú riêng. Ngày, môn, bài/tiết có thể nhập chung phía trên. Nhấn “Lưu ghi nhận cả lớp” để lưu các mục đã chọn cùng lúc; lựa chọn để trống sẽ không tạo bản ghi. Các mục được lưu vào bảng attendance và student_events để xem lại trong hồ sơ học sinh.

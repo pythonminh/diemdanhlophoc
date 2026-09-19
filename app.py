@@ -98,6 +98,37 @@ def class_page(cid):
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
     return render_template("class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans, today=date.today().isoformat())
 
+
+@app.post("/class/<int:cid>/bulk-record")
+def bulk_record(cid):
+    day=request.form.get("day") or date.today().isoformat()
+    subject=request.form.get("subject","").strip()
+    lesson=request.form.get("lesson","").strip()
+    saved_att= saved_events=0
+    with db() as c:
+        students=c.execute("SELECT id FROM students WHERE class_id=?",(cid,)).fetchall()
+        if not students: 
+            flash("Lớp chưa có học sinh.")
+            return redirect(url_for("class_page",cid=cid))
+        for st in students:
+            sid=st["id"]
+            status=request.form.get(f"attendance_{sid}","").strip()
+            event_type=request.form.get(f"event_{sid}","").strip()
+            note=request.form.get(f"note_{sid}","").strip()
+            if status:
+                c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",
+                          (sid,day,status,note))
+                saved_att+=1
+            if event_type:
+                try: points=float(request.form.get(f"points_{sid}") or 0)
+                except ValueError: points=0
+                c.execute("""INSERT INTO student_events(student_id,day,event_type,points,note,subject,lesson)
+                             VALUES(?,?,?,?,?,?,?)""",
+                          (sid,day,event_type,points,note,subject,lesson))
+                saved_events+=1
+    flash(f"Đã lưu nhanh: {saved_att} lượt điểm danh, {saved_events} hoạt động/vi phạm. Có thể xem lại trong lịch sử từng học sinh.")
+    return redirect(url_for("class_page",cid=cid))
+
 @app.post("/class/<int:cid>/import-tex")
 def import_tex(cid):
     upload=request.files.get("tex_file")
