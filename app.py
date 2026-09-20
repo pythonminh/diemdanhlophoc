@@ -1,9 +1,10 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
 import sqlite3, os, re, hashlib, hmac
 from datetime import timedelta
 from datetime import date
 from io import BytesIO
 import csv
+from openpyxl import Workbook, load_workbook
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
@@ -160,6 +161,99 @@ def parse_tex_students(tex_text):
     for r in records: unique[r["student_code"]]=r
     return list(unique.values())
 
+STUDENT_IMPORT_HEADERS = [
+    "Mã HS", "Họ và tên", "Ngày sinh", "Giới tính",
+    "Điện thoại HS", "Họ tên phụ huynh", "Điện thoại phụ huynh", "Ghi chú",
+]
+
+def _cell(v):
+    if v is None: return ""
+    return str(v).strip()
+
+def _student_record(parts):
+    """Map a list/tuple of columns to a student dict. Index 0 = student_code."""
+    parts=[_cell(x) for x in parts]
+    while len(parts)<8: parts.append("")
+    code,name=parts[0],parts[1]
+    if not code or not name: return None
+    if name.lower() in ("họ và tên","ho va ten"): return None
+    return {
+        "student_code":code, "name":name, "birth_date":parts[2], "gender":parts[3],
+        "phone":parts[4], "parent_name":parts[5], "parent_phone":parts[6], "note":parts[7],
+    }
+
+def parse_text_students(text):
+    """Parse pasted lines: code, name, birth, gender, phone, parent, parent_phone, note (tab/comma)."""
+    records=[]
+    for raw in (text or "").splitlines():
+        line=raw.strip()
+        if not line or line.startswith("#"): continue
+        if "\t" in line: parts=line.split("\t")
+        elif ";" in line: parts=line.split(";")
+        else: parts=next(csv.reader([line]))
+        rec=_student_record(parts)
+        if rec: records.append(rec)
+    unique={}
+    for r in records: unique[r["student_code"]]=r
+    return list(unique.values())
+
+def parse_xlsx_students(file_bytes):
+    wb=load_workbook(BytesIO(file_bytes), read_only=True, data_only=True)
+    ws=wb.active
+    records=[]
+    for i,row in enumerate(ws.iter_rows(values_only=True)):
+        if not row or all(v is None or str(v).strip()=="" for v in row): continue
+        # Skip header row when first cell looks like a column title.
+        if i==0 and _cell(row[0]).lower() in ("mã hs","ma hs","student_code","mã học sinh"):
+            continue
+        rec=_student_record(row)
+        if rec: records.append(rec)
+    unique={}
+    for r in records: unique[r["student_code"]]=r
+    return list(unique.values())
+
+def upsert_students(cid, records):
+    """Insert new or update existing students by student_code. Keeps history via stable id."""
+    added=updated=0
+    with db() as c:
+        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
+            return None
+        for s in records:
+            old=c.execute("SELECT id FROM students WHERE class_id=? AND student_code=?",(cid,s["student_code"])).fetchone()
+            if old:
+                # Always refresh core profile fields.
+                c.execute("""UPDATE students SET name=?,birth_date=?,gender=?,note=? WHERE id=?""",
+                          (s["name"],s["birth_date"],s["gender"],s["note"],old["id"]))
+                # Only overwrite contact fields when the import actually provides them
+                # (avoids wiping phones on LaTeX re-import).
+                if s.get("phone") or s.get("parent_name") or s.get("parent_phone"):
+                    c.execute("""UPDATE students SET phone=?,parent_name=?,parent_phone=? WHERE id=?""",
+                              (s.get("phone",""),s.get("parent_name",""),s.get("parent_phone",""),old["id"]))
+                updated+=1
+            else:
+                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone)
+                             VALUES(?,?,?,?,?,?,?,?,?)""",
+                          (cid,s["student_code"],s["name"],s["birth_date"],s["gender"],s["note"],
+                           s.get("phone",""),s.get("parent_name",""),s.get("parent_phone","")))
+                added+=1
+    return added, updated
+
+def upsert_attendance(c, student_id, day, status, note=""):
+    """One attendance row per student per day: update latest, drop older duplicates."""
+    existing=c.execute(
+        "SELECT id FROM attendance WHERE student_id=? AND day=? ORDER BY id DESC LIMIT 1",
+        (student_id, day),
+    ).fetchone()
+    if existing:
+        c.execute("UPDATE attendance SET status=?, note=? WHERE id=?", (status, note, existing["id"]))
+        c.execute("DELETE FROM attendance WHERE student_id=? AND day=? AND id!=?", (student_id, day, existing["id"]))
+        return "updated"
+    c.execute(
+        "INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",
+        (student_id, day, status, note),
+    )
+    return "inserted"
+
 @app.route("/")
 def index():
     with db() as c: classes=c.execute("SELECT * FROM classes ORDER BY name").fetchall()
@@ -207,7 +301,7 @@ def bulk_record(cid):
             status=request.form.get(f"attendance_{sid}","").strip()
             note=request.form.get(f"note_{sid}","").strip()
             if status:
-                c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",(sid,day,status,note))
+                upsert_attendance(c, sid, day, status, note)
                 saved_att+=1
             for packed in request.form.getlist(f"events_{sid}"):
                 try: event_type,points_s=packed.rsplit("|",1); points=float(points_s)
@@ -220,6 +314,58 @@ def bulk_record(cid):
                              VALUES(?,?,?,?,?,?,?)""",(sid,day,event_type,points,note,subject,lesson))
                 saved_events+=1
     flash(f"Đã lưu: {saved_att} lượt điểm danh, {saved_events} hoạt động/vi phạm. Có thể xem lại trong hồ sơ từng học sinh.")
+    return redirect(url_for("class_page",cid=cid))
+
+@app.get("/class/<int:cid>/students-template.xlsx")
+def students_template(cid):
+    with db() as c:
+        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
+            return "Không tìm thấy lớp",404
+    wb=Workbook()
+    ws=wb.active
+    ws.title="Danh sách"
+    ws.append(STUDENT_IMPORT_HEADERS)
+    ws.append(["HS001","NGUYỄN VĂN A","10/04/2011","Nam","","","","Ví dụ — xóa dòng này trước khi upload"])
+    buf=BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name="mau_danh_sach_hoc_sinh.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+@app.post("/class/<int:cid>/import-xlsx")
+def import_xlsx(cid):
+    upload=request.files.get("xlsx_file")
+    if not upload or not upload.filename.lower().endswith(".xlsx"):
+        flash("Chọn một tệp .xlsx hợp lệ.")
+        return redirect(url_for("class_page",cid=cid))
+    try:
+        parsed=parse_xlsx_students(upload.read())
+    except Exception:
+        flash("Không đọc được file Excel. Kiểm tra định dạng .xlsx.")
+        return redirect(url_for("class_page",cid=cid))
+    if not parsed:
+        flash("Không tìm thấy dòng học sinh trong Excel.")
+        return redirect(url_for("class_page",cid=cid))
+    result=upsert_students(cid, parsed)
+    if result is None: return "Không tìm thấy lớp",404
+    added,updated=result
+    flash(f"Excel: đọc {len(parsed)} học sinh — thêm {added}, cập nhật {updated}. Lịch sử được giữ theo mã HS.")
+    return redirect(url_for("class_page",cid=cid))
+
+@app.post("/class/<int:cid>/import-text")
+def import_text(cid):
+    parsed=parse_text_students(request.form.get("students_text",""))
+    if not parsed:
+        flash("Không tìm thấy dòng học sinh. Dùng tab hoặc dấu phẩy giữa các cột.")
+        return redirect(url_for("class_page",cid=cid))
+    result=upsert_students(cid, parsed)
+    if result is None: return "Không tìm thấy lớp",404
+    added,updated=result
+    flash(f"Văn bản: đọc {len(parsed)} học sinh — thêm {added}, cập nhật {updated}. Lịch sử được giữ theo mã HS.")
     return redirect(url_for("class_page",cid=cid))
 
 @app.post("/class/<int:cid>/import-tex")
@@ -235,19 +381,12 @@ def import_tex(cid):
     if not parsed:
         flash("Không tìm thấy dòng học sinh. Kiểm tra định dạng bảng trong tệp .tex.")
         return redirect(url_for("class_page",cid=cid))
-    added=updated=0
-    with db() as c:
-        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone(): return "Không tìm thấy lớp",404
-        for s in parsed:
-            old=c.execute("SELECT id FROM students WHERE class_id=? AND student_code=?",(cid,s["student_code"])).fetchone()
-            if old:
-                c.execute("""UPDATE students SET name=?,birth_date=?,gender=?,note=? WHERE id=?""",
-                          (s["name"],s["birth_date"],s["gender"],s["note"],old["id"]))
-                updated+=1
-            else:
-                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note) VALUES(?,?,?,?,?,?)""",
-                          (cid,s["student_code"],s["name"],s["birth_date"],s["gender"],s["note"]))
-                added+=1
+    # LaTeX rows may omit phone/parent fields.
+    for s in parsed:
+        s.setdefault("phone",""); s.setdefault("parent_name",""); s.setdefault("parent_phone","")
+    result=upsert_students(cid, parsed)
+    if result is None: return "Không tìm thấy lớp",404
+    added,updated=result
     flash(f"Đọc xong {len(parsed)} học sinh: thêm {added}, cập nhật {updated}. Lịch sử đã có được giữ nguyên theo mã học sinh.")
     return redirect(url_for("class_page",cid=cid))
 
@@ -315,10 +454,17 @@ def settings(cid):
 
 @app.post("/student/<int:sid>/attendance")
 def mark_attendance(sid):
+    day=request.form.get("day") or date.today().isoformat()
+    status=request.form.get("status","").strip()
+    note=request.form.get("note","").strip()
+    if not status:
+        flash("Chọn trạng thái điểm danh."); return redirect(url_for("student_page",sid=sid))
     with db() as c:
-        c.execute("INSERT INTO attendance(student_id,day,status,note) VALUES(?,?,?,?)",
-        (sid,request.form.get("day") or date.today().isoformat(),request.form.get("status",""),request.form.get("note","").strip()))
-    flash("Đã ghi nhận điểm danh."); return redirect(url_for("student_page",sid=sid))
+        if not c.execute("SELECT id FROM students WHERE id=?",(sid,)).fetchone():
+            return "Không tìm thấy học sinh",404
+        action=upsert_attendance(c, sid, day, status, note)
+    flash("Đã cập nhật điểm danh trong ngày." if action=="updated" else "Đã ghi nhận điểm danh.")
+    return redirect(url_for("student_page",sid=sid))
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT",5000)))
