@@ -23,8 +23,12 @@ def _path_writable(path):
         with open(probe, "w", encoding="utf-8") as f:
             f.write("ok")
         os.remove(probe)
+        # Confirm SQLite can actually open the file (makedirs alone is not enough on Render).
+        conn = sqlite3.connect(path)
+        conn.execute("SELECT 1")
+        conn.close()
         return True
-    except OSError:
+    except (OSError, sqlite3.Error):
         return False
 
 def resolve_db_path():
