@@ -384,13 +384,24 @@ def class_page(cid):
         students=c.execute("""SELECT * FROM students WHERE class_id=?
             ORDER BY CASE WHEN team GLOB '[0-9]*' THEN CAST(team AS INTEGER) ELSE 999 END,
                      team, seat_row, seat_col, student_code""",(cid,)).fetchall()
+        today_s=date.today().isoformat()
         student_summaries={}
         for st in students:
             total=c.execute("SELECT COALESCE(SUM(points),0) FROM student_events WHERE student_id=?",(st["id"],)).fetchone()[0]
             recent=c.execute("SELECT day,event_type,points,note,subject,lesson FROM student_events WHERE student_id=? ORDER BY day DESC,id DESC LIMIT 3",(st["id"],)).fetchall()
             all_events=c.execute("SELECT day,event_type,points,note,subject,lesson FROM student_events WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
             attendance=c.execute("SELECT day,status,note FROM attendance WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
-            student_summaries[st["id"]]={"total_points":total,"recent_events":recent,"all_events":all_events,"attendance":attendance}
+            pos_n=sum(1 for e in all_events if (e["points"] or 0)>0)
+            neg_n=sum(1 for e in all_events if (e["points"] or 0)<0)
+            today_att=c.execute(
+                "SELECT status FROM attendance WHERE student_id=? AND day=? ORDER BY id DESC LIMIT 1",
+                (st["id"], today_s),
+            ).fetchone()
+            student_summaries[st["id"]]={
+                "total_points":total,"recent_events":recent,"all_events":all_events,"attendance":attendance,
+                "pos_n":pos_n,"neg_n":neg_n,
+                "today_status": today_att["status"] if today_att else "",
+            }
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
     rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 7)
     seat_map, unseated=build_seat_map(students, rows, cols)

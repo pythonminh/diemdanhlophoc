@@ -30,10 +30,19 @@ tr.att-late td{background:#fff8e8!important}
 .view-label{font-size:13px;font-weight:750;color:#334155;margin:14px 0 6px}
 .view-label span{font-weight:500;color:#64748b}
 .seat-grid{display:grid;gap:6px;overflow:auto;padding-bottom:4px}
-.seat{min-height:54px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
+.seat{min-height:78px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:flex-start;gap:2px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
 .seat.filled{border-style:solid;background:#fff;box-shadow:0 1px 3px #15284a0a}
 .seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere;pointer-events:none}
 .seat .meta{color:#718096;font-size:10px;pointer-events:none}
+.seat-icons{display:flex;flex-wrap:wrap;gap:2px;margin-top:3px;pointer-events:none}
+.ico{font-size:9px;font-weight:800;padding:1px 4px;border-radius:4px;line-height:1.25;letter-spacing:.02em}
+.ico.g-nam{background:#dbeafe;color:#1d4ed8}.ico.g-nu{background:#fce7f3;color:#be185d}.ico.g-khac{background:#e2e8f0;color:#475569}
+.ico.pts-pos{background:#dcfce7;color:#15803d}.ico.pts-neg{background:#fee2e2;color:#b91c1c}.ico.pts-zero{background:#f1f5f9;color:#64748b}
+.ico.tot{background:#ecfdf5;color:#047857}.ico.vp{background:#fff1f2;color:#e11d48}
+.ico.att-cm{background:#dcfce7;color:#166534}.ico.att-vang{background:#fee2e2;color:#991b1b}.ico.att-tre{background:#fef3c7;color:#b45309}
+.seat.att-cm{background:#f0fdf4}.seat.att-vang{background:#fff1f2}.seat.att-tre{background:#fffbeb}
+.icon-legend{display:flex;flex-wrap:wrap;gap:6px 10px;margin:6px 0 10px;font-size:11px;color:#53627a}
+.icon-legend span{display:inline-flex;align-items:center;gap:4px}
 .seat.drag-over,.seat.tap-target{border-color:#315de8;background:#eef3ff;box-shadow:inset 0 0 0 2px #315de866}
 .seat.team-1{border-left:4px solid #315de8}.seat.team-2{border-left:4px solid #16a36a}.seat.team-3{border-left:4px solid #d97706}
 .seat.team-4{border-left:4px solid #db2777}.seat.team-5{border-left:4px solid #7c3aed}.seat.team-6{border-left:4px solid #0891b2}
@@ -128,15 +137,33 @@ tr.att-late td{background:#fff8e8!important}
 <span><i style="background:#315de8"></i>Tổ 1</span><span><i style="background:#16a36a"></i>Tổ 2</span><span><i style="background:#d97706"></i>Tổ 3</span>
 <span><i style="background:#db2777"></i>Tổ 4</span><span><i style="background:#7c3aed"></i>Tổ 5</span><span><i style="background:#0891b2"></i>Tổ 6</span>
 </div>
+<div class="icon-legend">
+<span><span class="ico g-nam">Nam</span>/<span class="ico g-nu">Nữ</span> giới tính</span>
+<span><span class="ico pts-pos">+điểm</span> <span class="ico pts-neg">−điểm</span> tổng</span>
+<span><span class="ico tot">★n</span> khen</span>
+<span><span class="ico vp">!n</span> vi phạm</span>
+<span><span class="ico att-cm">CM</span> <span class="ico att-vang">Vắng</span> <span class="ico att-tre">Trễ</span> hôm nay</span>
+</div>
 <p class="seat-hint" id="seatHint">Chưa chọn học sinh — kéo hoặc chạm một tên để bắt đầu.</p>
 <div class="seat-grid" id="seatGrid" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
 {% for r in range(1, layout_rows+1) %}{% for c in range(1, layout_cols+1) %}
 {% set st = seat_map.get((r,c)) %}
 {% if st %}
+{% set sm = student_summaries[st.id] %}
 {% set tc = st.team if st.team in ['1','2','3','4','5','6'] else ('other' if st.team else '') %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}}">
+{% set g = (st.gender or '')|lower %}
+{% set att = sm.today_status or '' %}
+{% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
 <span class="sn">{{ short_name(st.name) }}</span>
 <span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+<span class="seat-icons">
+{% if 'nữ' in g or g=='nu' or g.startswith('f') %}<span class="ico g-nu">Nữ</span>{% elif 'nam' in g or g.startswith('m') %}<span class="ico g-nam">Nam</span>{% elif st.gender %}<span class="ico g-khac">{{st.gender[:3]}}</span>{% endif %}
+{% if sm.total_points > 0 %}<span class="ico pts-pos">+{{'%.1f'|format(sm.total_points)}}</span>{% elif sm.total_points < 0 %}<span class="ico pts-neg">{{'%.1f'|format(sm.total_points)}}</span>{% else %}<span class="ico pts-zero">0</span>{% endif %}
+{% if sm.pos_n %}<span class="ico tot" title="Số lần cộng điểm">★{{sm.pos_n}}</span>{% endif %}
+{% if sm.neg_n %}<span class="ico vp" title="Số lần trừ điểm / vi phạm">!{{sm.neg_n}}</span>{% endif %}
+{% if att=='Có mặt' %}<span class="ico att-cm">CM</span>{% elif 'trễ' in att|lower %}<span class="ico att-tre">Trễ</span>{% elif att %}<span class="ico att-vang">Vắng</span>{% endif %}
+</span>
 </div>
 {% else %}
 <div class="seat" data-row="{{r}}" data-col="{{c}}" data-sid=""><span class="meta">H{{r}}-C{{c}}</span></div>
@@ -149,10 +176,21 @@ tr.att-late td{background:#fff8e8!important}
 {% for r in range(layout_rows, 0, -1) %}{% for c in range(layout_cols, 0, -1) %}
 {% set st = seat_map.get((r,c)) %}
 {% if st %}
+{% set sm = student_summaries[st.id] %}
 {% set tc = st.team if st.team in ['1','2','3','4','5','6'] else ('other' if st.team else '') %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}}">
+{% set g = (st.gender or '')|lower %}
+{% set att = sm.today_status or '' %}
+{% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
 <span class="sn">{{ short_name(st.name) }}</span>
 <span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+<span class="seat-icons">
+{% if 'nữ' in g or g=='nu' or g.startswith('f') %}<span class="ico g-nu">Nữ</span>{% elif 'nam' in g or g.startswith('m') %}<span class="ico g-nam">Nam</span>{% elif st.gender %}<span class="ico g-khac">{{st.gender[:3]}}</span>{% endif %}
+{% if sm.total_points > 0 %}<span class="ico pts-pos">+{{'%.1f'|format(sm.total_points)}}</span>{% elif sm.total_points < 0 %}<span class="ico pts-neg">{{'%.1f'|format(sm.total_points)}}</span>{% else %}<span class="ico pts-zero">0</span>{% endif %}
+{% if sm.pos_n %}<span class="ico tot" title="Số lần cộng điểm">★{{sm.pos_n}}</span>{% endif %}
+{% if sm.neg_n %}<span class="ico vp" title="Số lần trừ điểm / vi phạm">!{{sm.neg_n}}</span>{% endif %}
+{% if att=='Có mặt' %}<span class="ico att-cm">CM</span>{% elif 'trễ' in att|lower %}<span class="ico att-tre">Trễ</span>{% elif att %}<span class="ico att-vang">Vắng</span>{% endif %}
+</span>
 </div>
 {% else %}
 <div class="seat" data-row="{{r}}" data-col="{{c}}" data-sid=""><span class="meta">H{{r}}-C{{c}}</span></div>
@@ -165,7 +203,7 @@ tr.att-late td{background:#fff8e8!important}
 <div class="pool" id="seatPool" aria-label="Học sinh chưa xếp chỗ">
 {% for s in students %}
 {% if not s.seat_row or not s.seat_col %}
-<span class="pupil" draggable="true" data-sid="{{s.id}}" data-code="{{s.student_code}}" data-name="{{s.name}}" data-short="{{ short_name(s.name) }}" data-team="{{s.team or ''}}"><span>{{ short_name(s.name) }}</span><span class="code">{{s.student_code}}</span></span>
+<span class="pupil" draggable="true" data-sid="{{s.id}}" data-code="{{s.student_code}}" data-name="{{s.name}}" data-short="{{ short_name(s.name) }}" data-team="{{s.team or ''}}"><span>{{ short_name(s.name) }}</span><span class="code">{{s.student_code}}</span>{% set sm=student_summaries[s.id] %}{% if sm.neg_n %}<span class="ico vp">!{{sm.neg_n}}</span>{% endif %}{% if sm.pos_n %}<span class="ico tot">★{{sm.pos_n}}</span>{% endif %}</span>
 {% endif %}
 {% endfor %}
 </div>
@@ -245,7 +283,18 @@ function toggleDetail(id,btn){
 
 const STUDENTS={};
 {% for s in students %}
-STUDENTS["{{s.id}}"]={code:{{s.student_code|tojson}},name:{{s.name|tojson}},short:{{ short_name(s.name)|tojson }},team:{{ (s.team or '')|tojson }}};
+{% set sm = student_summaries[s.id] %}
+STUDENTS["{{s.id}}"]={
+ code:{{s.student_code|tojson}},
+ name:{{s.name|tojson}},
+ short:{{ short_name(s.name)|tojson }},
+ team:{{ (s.team or '')|tojson }},
+ gender:{{ (s.gender or '')|tojson }},
+ points:{{ sm.total_points|float }},
+ pos:{{ sm.pos_n }},
+ neg:{{ sm.neg_n }},
+ att:{{ (sm.today_status or '')|tojson }}
+};
 {% endfor %}
 let selectedSid=null;
 let dragSid=null;
@@ -254,6 +303,34 @@ function teamClass(team){
  if(['1','2','3','4','5','6'].includes(String(team))) return 'team-'+team;
  if(team) return 'team-other';
  return '';
+}
+function genderBadge(g){
+ const s=String(g||'').toLowerCase();
+ if(s.includes('nữ')||s.includes('nu')||s.startsWith('f')) return '<span class="ico g-nu">Nữ</span>';
+ if(s.includes('nam')||s.startsWith('m')) return '<span class="ico g-nam">Nam</span>';
+ if(g) return '<span class="ico g-khac">'+String(g).slice(0,3)+'</span>';
+ return '';
+}
+function pointsBadge(p){
+ const n=Number(p)||0;
+ if(n>0) return '<span class="ico pts-pos">+'+n.toFixed(1)+'</span>';
+ if(n<0) return '<span class="ico pts-neg">'+n.toFixed(1)+'</span>';
+ return '<span class="ico pts-zero">0</span>';
+}
+function attBadge(att){
+ const s=String(att||'');
+ const low=s.toLowerCase();
+ if(s==='Có mặt') return {html:'<span class="ico att-cm">CM</span>', cls:'att-cm'};
+ if(low.includes('trễ')||low.includes('tre')) return {html:'<span class="ico att-tre">Trễ</span>', cls:'att-tre'};
+ if(s) return {html:'<span class="ico att-vang">Vắng</span>', cls:'att-vang'};
+ return {html:'', cls:''};
+}
+function seatIconsHtml(info){
+ let h=genderBadge(info.gender)+pointsBadge(info.points);
+ if(info.pos) h+='<span class="ico tot" title="Số lần cộng điểm">★'+info.pos+'</span>';
+ if(info.neg) h+='<span class="ico vp" title="Số lần trừ điểm / vi phạm">!'+info.neg+'</span>';
+ h+=attBadge(info.att).html;
+ return h ? '<span class="seat-icons">'+h+'</span>' : '';
 }
 function setInputs(sid,row,col){
  const r=document.getElementById('seat_row_'+sid);
@@ -290,9 +367,11 @@ function refreshSeatVisual(seat){
  seat.dataset.team=team;
  seat.classList.add('filled');
  const tc=teamClass(team); if(tc) seat.classList.add(tc);
+ const att=attBadge(info.att); if(att.cls) seat.classList.add(att.cls);
  seat.draggable=true;
- seat.title=(info.name||'')+' · '+(info.code||'');
- seat.innerHTML='<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>';
+ const tip=[info.name, info.code, (Number(info.points)||0).toFixed(1)+' điểm', info.att].filter(Boolean).join(' · ');
+ seat.title=tip;
+ seat.innerHTML='<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>'+seatIconsHtml(info);
 }
 window.refreshSeatVisual=refreshSeatVisual;
 
@@ -313,7 +392,10 @@ function makePupil(sid){
  el.dataset.name=info.name||'';
  el.dataset.short=info.short||'?';
  el.dataset.team=team;
- el.innerHTML='<span>'+(info.short||'?')+'</span><span class="code">'+(info.code||'')+'</span>';
+ let extra='';
+ if(info.neg) extra+='<span class="ico vp">!'+info.neg+'</span>';
+ if(info.pos) extra+='<span class="ico tot">★'+info.pos+'</span>';
+ el.innerHTML='<span>'+(info.short||'?')+'</span><span class="code">'+(info.code||'')+'</span>'+extra;
  bindPupil(el);
  return el;
 }
