@@ -83,8 +83,8 @@ def change_password():
 def init_db():
     with db() as c:
         c.executescript("""
-        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, school_year TEXT DEFAULT '', homeroom_teacher TEXT DEFAULT '', teacher_phone TEXT DEFAULT '');
-        CREATE TABLE IF NOT EXISTS students(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, student_code TEXT NOT NULL, name TEXT NOT NULL, birth_date TEXT DEFAULT '', gender TEXT DEFAULT '', note TEXT DEFAULT '', phone TEXT DEFAULT '', parent_name TEXT DEFAULT '', parent_phone TEXT DEFAULT '', FOREIGN KEY(class_id) REFERENCES classes(id), UNIQUE(class_id,student_code));
+        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, school_year TEXT DEFAULT '', homeroom_teacher TEXT DEFAULT '', teacher_phone TEXT DEFAULT '', layout_rows INTEGER DEFAULT 6, layout_cols INTEGER DEFAULT 7);
+        CREATE TABLE IF NOT EXISTS students(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, student_code TEXT NOT NULL, name TEXT NOT NULL, birth_date TEXT DEFAULT '', gender TEXT DEFAULT '', note TEXT DEFAULT '', phone TEXT DEFAULT '', parent_name TEXT DEFAULT '', parent_phone TEXT DEFAULT '', team TEXT DEFAULT '', seat_row INTEGER, seat_col INTEGER, FOREIGN KEY(class_id) REFERENCES classes(id), UNIQUE(class_id,student_code));
         CREATE TABLE IF NOT EXISTS attendance(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL, note TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS student_events(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, event_type TEXT NOT NULL, points REAL DEFAULT 0, note TEXT DEFAULT '', subject TEXT DEFAULT '', lesson TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS lesson_plans(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, subject TEXT NOT NULL, lesson TEXT NOT NULL, day TEXT DEFAULT '', period TEXT DEFAULT '', note TEXT DEFAULT '');
@@ -96,8 +96,11 @@ def init_db():
             c.execute("INSERT INTO app_settings(key,value) VALUES('edit_password_hash',?)",(digest,))
         # Migrate DB created by earlier versions without losing records.
         cols={r["name"] for r in c.execute("PRAGMA table_info(students)").fetchall()}
-        for name,typ in [("birth_date","TEXT DEFAULT ''"),("gender","TEXT DEFAULT ''"),("note","TEXT DEFAULT ''"),("phone","TEXT DEFAULT ''"),("parent_name","TEXT DEFAULT ''"),("parent_phone","TEXT DEFAULT ''")]:
+        for name,typ in [("birth_date","TEXT DEFAULT ''"),("gender","TEXT DEFAULT ''"),("note","TEXT DEFAULT ''"),("phone","TEXT DEFAULT ''"),("parent_name","TEXT DEFAULT ''"),("parent_phone","TEXT DEFAULT ''"),("team","TEXT DEFAULT ''"),("seat_row","INTEGER"),("seat_col","INTEGER")]:
             if name not in cols: c.execute(f"ALTER TABLE students ADD COLUMN {name} {typ}")
+        ccols={r["name"] for r in c.execute("PRAGMA table_info(classes)").fetchall()}
+        for name,typ in [("layout_rows","INTEGER DEFAULT 6"),("layout_cols","INTEGER DEFAULT 7")]:
+            if name not in ccols: c.execute(f"ALTER TABLE classes ADD COLUMN {name} {typ}")
 # Danh mục tích chọn nhanh. Điểm mặc định có thể chỉnh trực tiếp trên giao diện sau này.
 EVENT_DEFAULTS = {
     "Xung phong": 1.0,
@@ -121,26 +124,63 @@ EVENT_DEFAULTS = {
 
 init_db()
 
+def normalize_team(value):
+    """Accept '1', 'Tổ 1', 'to 2' → canonical '1' (empty if blank)."""
+    s=_cell(value)
+    if not s: return ""
+    m=re.search(r"(\d+)", s)
+    return m.group(1) if m else s
+
+def parse_int_cell(value):
+    s=_cell(value)
+    if not s: return None
+    m=re.search(r"(\d+)", s)
+    if not m: return None
+    try: return int(m.group(1))
+    except ValueError: return None
+
+def parse_team_marker(line):
+    """Detect '% Tổ 1' or '\\section*{Tổ 2}' style markers."""
+    raw=line.strip()
+    if raw.startswith("%"):
+        m=re.search(r"t[oôố]\s*(\d+)", raw, re.I)
+        if m: return m.group(1)
+    m=re.search(r"\\(?:section|subsection|paragraph)\*?\{[^}]*t[oôố]\s*(\d+)", raw, re.I)
+    if m: return m.group(1)
+    m=re.match(r"^\s*t[oôố]\s*(\d+)\s*$", raw, re.I)
+    if m: return m.group(1)
+    return None
+
 def parse_tex_students(tex_text):
-    """Parse table rows like: 1 & HS001 & NGUYỄN VĂN A & 10/04/2011 & Nam \\\\"""
+    """Parse LaTeX table rows; optional team via section markers or Tổ/Hàng/Cột columns.
+
+    Supported row shapes (after optional STT):
+      Mã & Tên & NS & GT
+      Mã & Tên & NS & GT & Tổ
+      Mã & Tên & NS & GT & Tổ & Hàng & Cột
+    Markers like `% Tổ 1` or `\\section*{Tổ 1}` set the current team for following rows.
+    """
     records=[]
+    current_team=""
     for raw in tex_text.splitlines():
         line=raw.strip()
-        if not line or line.startswith("%") or "&" not in line:
+        if not line: continue
+        marker=parse_team_marker(line)
+        if marker:
+            current_team=marker
+            continue
+        if line.startswith("%") or "&" not in line:
             continue
         line=re.sub(r"(?<!\\)%.*$","",line).strip()
         line=re.sub(r"\\\\\s*$","",line).strip()
-        # Drop LaTeX row decorations and commands.
         if not line or line.startswith("\\") or "textbf" in line.lower():
             continue
         cells=[re.sub(r"\\(?:textbf|textit|emph)\s*\{([^{}]*)\}",r"\1",x).strip() for x in line.split("&")]
         cells=[re.sub(r"\\[a-zA-Z]+\*?(?:\[[^\]]*\])?", "", x).strip() for x in cells]
         cells=[x.replace("{","").replace("}","").replace("~"," ").strip() for x in cells]
         if len(cells)<3: continue
-        # Expected columns: ordinal, student code, full name, birth date, gender, optional note.
         code=cells[1] if len(cells)>=4 and re.fullmatch(r"(?:HS|[A-Za-z]*\d+)[A-Za-z0-9_-]*",cells[1],re.I) else ""
         if not code:
-            # Also support tables without ordinal: code, name, date, gender.
             code=cells[0] if re.fullmatch(r"(?:HS|[A-Za-z]*\d+)[A-Za-z0-9_-]*",cells[0],re.I) else ""
             if code: cells=[cells[0],*cells[1:]]
         if not code: continue
@@ -148,15 +188,32 @@ def parse_tex_students(tex_text):
             name=cells[2]
             birth=cells[3] if len(cells)>3 else ""
             gender=cells[4] if len(cells)>4 else ""
-            note=cells[5] if len(cells)>5 else ""
+            rest=cells[5:]
         else:
             name=cells[1] if len(cells)>1 else ""
             birth=cells[2] if len(cells)>2 else ""
             gender=cells[3] if len(cells)>3 else ""
-            note=cells[4] if len(cells)>4 else ""
+            rest=cells[4:]
         if not name or name.lower() in ("họ và tên","ho va ten"): continue
-        records.append({"student_code":code,"name":name,"birth_date":birth,"gender":gender,"note":note})
-    # Keep first occurrence of each code.
+        team, seat_row, seat_col, note = current_team, None, None, ""
+        # rest may be: note | team | team,row,col | team,row,col,note
+        if len(rest)>=3 and parse_int_cell(rest[1]) is not None and parse_int_cell(rest[2]) is not None:
+            team=normalize_team(rest[0]) or team
+            seat_row=parse_int_cell(rest[1])
+            seat_col=parse_int_cell(rest[2])
+            note=rest[3] if len(rest)>3 else ""
+        elif rest and (
+            re.match(r"(?i)^t[oôố]?\s*\d+$", rest[0] or "")
+            or (rest[0].isdigit() and len(rest[0])<=2)
+        ):
+            team=normalize_team(rest[0]) or team
+            note=rest[1] if len(rest)>1 else ""
+        elif rest:
+            note=" ".join(rest)
+        records.append({
+            "student_code":code,"name":name,"birth_date":birth,"gender":gender,"note":note,
+            "team":team,"seat_row":seat_row,"seat_col":seat_col,
+        })
     unique={}
     for r in records: unique[r["student_code"]]=r
     return list(unique.values())
@@ -164,6 +221,7 @@ def parse_tex_students(tex_text):
 STUDENT_IMPORT_HEADERS = [
     "Mã HS", "Họ và tên", "Ngày sinh", "Giới tính",
     "Điện thoại HS", "Họ tên phụ huynh", "Điện thoại phụ huynh", "Ghi chú",
+    "Tổ", "Hàng", "Cột",
 ]
 
 def _cell(v):
@@ -171,15 +229,17 @@ def _cell(v):
     return str(v).strip()
 
 def _student_record(parts):
-    """Map a list/tuple of columns to a student dict. Index 0 = student_code."""
+    """Map columns: code, name, birth, gender, phone, parent, parent_phone, note, team, row, col."""
     parts=[_cell(x) for x in parts]
-    while len(parts)<8: parts.append("")
+    while len(parts)<11: parts.append("")
     code,name=parts[0],parts[1]
     if not code or not name: return None
     if name.lower() in ("họ và tên","ho va ten"): return None
     return {
         "student_code":code, "name":name, "birth_date":parts[2], "gender":parts[3],
         "phone":parts[4], "parent_name":parts[5], "parent_phone":parts[6], "note":parts[7],
+        "team":normalize_team(parts[8]),
+        "seat_row":parse_int_cell(parts[9]), "seat_col":parse_int_cell(parts[10]),
     }
 
 def parse_text_students(text):
@@ -220,23 +280,52 @@ def upsert_students(cid, records):
             return None
         for s in records:
             old=c.execute("SELECT id FROM students WHERE class_id=? AND student_code=?",(cid,s["student_code"])).fetchone()
+            team=normalize_team(s.get("team",""))
+            seat_row=s.get("seat_row"); seat_col=s.get("seat_col")
             if old:
-                # Always refresh core profile fields.
                 c.execute("""UPDATE students SET name=?,birth_date=?,gender=?,note=? WHERE id=?""",
                           (s["name"],s["birth_date"],s["gender"],s["note"],old["id"]))
-                # Only overwrite contact fields when the import actually provides them
-                # (avoids wiping phones on LaTeX re-import).
                 if s.get("phone") or s.get("parent_name") or s.get("parent_phone"):
                     c.execute("""UPDATE students SET phone=?,parent_name=?,parent_phone=? WHERE id=?""",
                               (s.get("phone",""),s.get("parent_name",""),s.get("parent_phone",""),old["id"]))
+                if team or seat_row is not None or seat_col is not None:
+                    # Only overwrite seating when import provides team and/or seat.
+                    sets=[]; vals=[]
+                    if team: sets.append("team=?"); vals.append(team)
+                    if seat_row is not None: sets.append("seat_row=?"); vals.append(seat_row)
+                    if seat_col is not None: sets.append("seat_col=?"); vals.append(seat_col)
+                    vals.append(old["id"])
+                    c.execute(f"UPDATE students SET {', '.join(sets)} WHERE id=?", vals)
                 updated+=1
             else:
-                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone)
-                             VALUES(?,?,?,?,?,?,?,?,?)""",
+                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (cid,s["student_code"],s["name"],s["birth_date"],s["gender"],s["note"],
-                           s.get("phone",""),s.get("parent_name",""),s.get("parent_phone","")))
+                           s.get("phone",""),s.get("parent_name",""),s.get("parent_phone",""),
+                           team, seat_row, seat_col))
                 added+=1
     return added, updated
+
+def short_name(full_name):
+    parts=[p for p in (full_name or "").split() if p]
+    if not parts: return "?"
+    if len(parts)==1: return parts[0][:10]
+    return f"{parts[0][0]}. {parts[-1]}"[:14]
+
+def build_seat_map(students, rows, cols):
+    seat_map={}
+    unseated=[]
+    for st in students:
+        r,c=st["seat_row"], st["seat_col"]
+        if r and c and 1<=int(r)<=rows and 1<=int(c)<=cols:
+            key=(int(r),int(c))
+            if key not in seat_map:
+                seat_map[key]=st
+            else:
+                unseated.append(st)
+        else:
+            unseated.append(st)
+    return seat_map, unseated
 
 def upsert_attendance(c, student_id, day, status, note=""):
     """One attendance row per student per day: update latest, drop older duplicates."""
@@ -274,8 +363,9 @@ def class_page(cid):
     with db() as c:
         cl=c.execute("SELECT * FROM classes WHERE id=?",(cid,)).fetchone()
         if not cl: return "Không tìm thấy lớp",404
-        students=c.execute("SELECT * FROM students WHERE class_id=? ORDER BY student_code",(cid,)).fetchall()
-        # Add an at-a-glance summary of event notes and net points per student.
+        students=c.execute("""SELECT * FROM students WHERE class_id=?
+            ORDER BY CASE WHEN team GLOB '[0-9]*' THEN CAST(team AS INTEGER) ELSE 999 END,
+                     team, seat_row, seat_col, student_code""",(cid,)).fetchall()
         student_summaries={}
         for st in students:
             total=c.execute("SELECT COALESCE(SUM(points),0) FROM student_events WHERE student_id=?",(st["id"],)).fetchone()[0]
@@ -284,7 +374,13 @@ def class_page(cid):
             attendance=c.execute("SELECT day,status,note FROM attendance WHERE student_id=? ORDER BY day DESC,id DESC",(st["id"],)).fetchall()
             student_summaries[st["id"]]={"total_points":total,"recent_events":recent,"all_events":all_events,"attendance":attendance}
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
-    return render_template("class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans, today=date.today().isoformat(), event_defaults=EVENT_DEFAULTS)
+    rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 7)
+    seat_map, unseated=build_seat_map(students, rows, cols)
+    return render_template(
+        "class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans,
+        today=date.today().isoformat(), event_defaults=EVENT_DEFAULTS,
+        layout_rows=rows, layout_cols=cols, seat_map=seat_map, unseated=unseated, short_name=short_name,
+    )
 
 
 @app.post("/class/<int:cid>/bulk-record")
@@ -325,7 +421,7 @@ def students_template(cid):
     ws=wb.active
     ws.title="Danh sách"
     ws.append(STUDENT_IMPORT_HEADERS)
-    ws.append(["HS001","NGUYỄN VĂN A","10/04/2011","Nam","","","","Ví dụ — xóa dòng này trước khi upload"])
+    ws.append(["HS001","NGUYỄN VĂN A","10/04/2011","Nam","","","","","1","1","1"])
     buf=BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -335,6 +431,73 @@ def students_template(cid):
         download_name="mau_danh_sach_hoc_sinh.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+LATEX_SEATING_TEMPLATE = r"""% Mẫu danh sách + chỗ ngồi theo tổ — dùng cho app điểm danh
+% Quy ước: Hàng 1 gần bảng GV; Cột 1 từ TRÁI khi nhìn lên bảng.
+% Có thể đánh dấu tổ bằng comment %% Tổ N hoặc cột Tổ / Hàng / Cột trên mỗi dòng.
+% Định dạng dòng: STT & Mã HS & Họ tên & Ngày sinh & Giới tính & Tổ & Hàng & Cột \\
+
+\section*{Tổ 1}
+\begin{longtable}{|c|l|p{5.2cm}|c|c|c|c|c|}
+\hline
+STT & Mã HS & Họ và tên & Ngày sinh & GT & Tổ & Hàng & Cột \\
+\hline
+1 & HS001 & NGUYỄN VĂN A & 10/04/2011 & Nam & 1 & 1 & 1 \\
+\hline
+2 & HS002 & TRẦN THỊ B & 12/03/2011 & Nữ & 1 & 1 & 2 \\
+\hline
+\end{longtable}
+
+\section*{Tổ 2}
+\begin{longtable}{|c|l|p{5.2cm}|c|c|c|c|c|}
+\hline
+STT & Mã HS & Họ và tên & Ngày sinh & GT & Tổ & Hàng & Cột \\
+\hline
+1 & HS003 & LÊ VĂN C & 01/05/2011 & Nam & 2 & 2 & 1 \\
+\hline
+2 & HS004 & PHẠM THỊ D & 08/08/2011 & Nữ & 2 & 2 & 2 \\
+\hline
+\end{longtable}
+
+% Cách ngắn — chỉ dùng marker tổ, không ghi cột Tổ/Hàng/Cột:
+% Tổ 3
+% 1 & HS005 & HOÀNG VĂN E & 20/01/2011 & Nam \\
+"""
+
+@app.get("/class/<int:cid>/seating-template.tex")
+def seating_template(cid):
+    with db() as c:
+        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
+            return "Không tìm thấy lớp",404
+    buf=BytesIO(LATEX_SEATING_TEMPLATE.encode("utf-8"))
+    return send_file(buf, as_attachment=True, download_name="mau_so_do_theo_to.tex", mimetype="text/x-tex")
+
+@app.post("/class/<int:cid>/seating")
+def save_seating(cid):
+    try: rows=max(1, min(20, int(request.form.get("layout_rows") or 6)))
+    except ValueError: rows=6
+    try: cols=max(1, min(20, int(request.form.get("layout_cols") or 7)))
+    except ValueError: cols=7
+    with db() as c:
+        if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
+            return "Không tìm thấy lớp",404
+        c.execute("UPDATE classes SET layout_rows=?, layout_cols=? WHERE id=?", (rows, cols, cid))
+        students=c.execute("SELECT id FROM students WHERE class_id=?",(cid,)).fetchall()
+        # Clear seats that would collide: apply in two passes — first clear, then set.
+        for st in students:
+            sid=st["id"]
+            team=normalize_team(request.form.get(f"team_{sid}",""))
+            clear=request.form.get(f"clear_seat_{sid}")=="1"
+            r=parse_int_cell(request.form.get(f"seat_row_{sid}",""))
+            col=parse_int_cell(request.form.get(f"seat_col_{sid}",""))
+            if clear:
+                c.execute("UPDATE students SET team=?, seat_row=NULL, seat_col=NULL WHERE id=?", (team, sid))
+            else:
+                if r is not None and not (1<=r<=rows): r=None
+                if col is not None and not (1<=col<=cols): col=None
+                c.execute("UPDATE students SET team=?, seat_row=?, seat_col=? WHERE id=?", (team, r, col, sid))
+    flash(f"Đã lưu sơ đồ lớp ({rows}×{cols}) và tổ/chỗ ngồi.")
+    return redirect(url_for("class_page",cid=cid)+"#so-do-lop")
 
 @app.post("/class/<int:cid>/import-xlsx")
 def import_xlsx(cid):
@@ -409,12 +572,15 @@ def edit_student(sid):
     name=request.form.get("name","").strip(); code=request.form.get("student_code","").strip()
     if not name or not code:
         flash("Mã học sinh và họ tên không được để trống."); return redirect(url_for("student_page",sid=sid))
+    team=normalize_team(request.form.get("team",""))
+    seat_row=parse_int_cell(request.form.get("seat_row",""))
+    seat_col=parse_int_cell(request.form.get("seat_col",""))
     with db() as c:
         row=c.execute("SELECT class_id FROM students WHERE id=?",(sid,)).fetchone()
         if not row: return "Không tìm thấy học sinh",404
         try:
-            c.execute("""UPDATE students SET student_code=?,name=?,birth_date=?,gender=?,note=?,phone=?,parent_name=?,parent_phone=? WHERE id=?""",
-             (code,name,request.form.get("birth_date",""),request.form.get("gender",""),request.form.get("note",""),request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip(),sid))
+            c.execute("""UPDATE students SET student_code=?,name=?,birth_date=?,gender=?,note=?,phone=?,parent_name=?,parent_phone=?,team=?,seat_row=?,seat_col=? WHERE id=?""",
+             (code,name,request.form.get("birth_date",""),request.form.get("gender",""),request.form.get("note",""),request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip(),team,seat_row,seat_col,sid))
             flash("Đã cập nhật hồ sơ. Lịch sử vẫn được giữ nguyên.")
         except sqlite3.IntegrityError: flash("Mã học sinh bị trùng trong lớp.")
     return redirect(url_for("student_page",sid=sid))

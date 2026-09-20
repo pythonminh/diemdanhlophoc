@@ -55,6 +55,9 @@ textarea{resize:vertical;min-height:42px}
 <div class="field"><label>Điện thoại học sinh</label><input name="phone" value="{{s.phone}}" placeholder="Số điện thoại"></div>
 <div class="field wide"><label>Họ tên phụ huynh</label><input name="parent_name" value="{{s.parent_name}}" placeholder="Họ và tên phụ huynh"></div>
 <div class="field"><label>Điện thoại phụ huynh</label><input name="parent_phone" value="{{s.parent_phone}}" placeholder="Số điện thoại"></div>
+<div class="field"><label>Tổ</label><input name="team" value="{{s.team or ''}}" placeholder="VD: 1"></div>
+<div class="field"><label>Hàng (chỗ ngồi)</label><input type="number" name="seat_row" value="{{s.seat_row or ''}}" min="1" max="20" placeholder="Gần bảng = 1"></div>
+<div class="field"><label>Cột (chỗ ngồi)</label><input type="number" name="seat_col" value="{{s.seat_col or ''}}" min="1" max="20" placeholder="Trái → phải"></div>
 <div class="field full"><label>Ghi chú</label><input name="note" value="{{s.note}}" placeholder="Thông tin cần lưu ý"></div>
 </div><div class="actions"><button class="btn primary">Lưu thay đổi</button></div>
 </form><p class="hint" style="margin-top:12px">Cập nhật hồ sơ không xóa lịch sử điểm danh hay hoạt động.</p>

@@ -25,6 +25,23 @@ tr.att-late td{background:#fff8e8!important}
 .quick-head label{font-size:12px;color:#53627a;display:block}
 .quick-head input{margin:3px 0 0}
 .savebar{position:sticky;bottom:0;background:#eef3ff;border:1px solid #cad7ff;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:8}
+.board{background:#243552;color:#fff;text-align:center;padding:8px 10px;border-radius:8px;font-weight:700;letter-spacing:.04em;margin:0 0 10px}
+.seat-grid{display:grid;gap:6px;overflow:auto;padding-bottom:4px}
+.seat{min-height:54px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.seat.filled{border-style:solid;background:#fff;box-shadow:0 1px 3px #15284a0a}
+.seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere}
+.seat .meta{color:#718096;font-size:10px}
+.seat.team-1{border-left:4px solid #315de8}.seat.team-2{border-left:4px solid #16a36a}.seat.team-3{border-left:4px solid #d97706}
+.seat.team-4{border-left:4px solid #db2777}.seat.team-5{border-left:4px solid #7c3aed}.seat.team-6{border-left:4px solid #0891b2}
+.seat.team-other{border-left:4px solid #64748b}
+.seat-legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px;font-size:12px;color:#53627a}
+.seat-legend span{display:inline-flex;align-items:center;gap:5px}
+.seat-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.seat-assign{width:100%;overflow:auto;margin-top:10px}
+.seat-assign table{min-width:100%;width:max-content}
+.seat-assign th,.seat-assign td{position:static!important;box-shadow:none!important;min-width:auto!important;white-space:nowrap}
+.layout-fields{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:8px 0 12px}
+.layout-fields label{font-size:12px;color:#53627a}
 @media(max-width:700px){.quick-controls{min-width:250px}.quick-controls select,.quick-controls input{max-width:125px}.savebar{flex-wrap:wrap}}
 .student-name{border:0;background:transparent;color:#2457d6;padding:0;margin:0;text-align:left;font-weight:750;text-decoration:underline;cursor:pointer}
 .detail-row td{position:static!important;background:#f7f9ff!important;padding:14px!important;box-shadow:none!important}
@@ -77,7 +94,58 @@ tr.att-late td{background:#fff8e8!important}
 <div class="detail-box"><h4>Nhập Excel</h4><p><a href="/class/{{cl.id}}/students-template.xlsx">⬇ Tải file Excel mẫu</a></p><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-xlsx"><input type="file" name="xlsx_file" accept=".xlsx" required><button>Upload Excel và cập nhật</button></form></div>
 <div class="detail-box"><h4>Dán danh sách trực tiếp</h4><form method="post" action="/class/{{cl.id}}/import-text"><textarea name="students_text" rows="5" style="width:100%;padding:10px;border:1px solid #d6deeb;border-radius:8px" placeholder="HS051&#9;NGUYỄN VĂN B&#9;12/03/2011&#9;Nam" required></textarea><button>Đọc văn bản</button></form></div>
 </div>
-<details style="margin-top:10px"><summary>Nhập từ file LaTeX (.tex)</summary><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-tex"><input type="file" name="tex_file" accept=".tex" required><button>Đọc và cập nhật .tex</button></form></details></section><section><h2>Thông tin lớp / GVCN</h2><form method="post" action="/class/{{cl.id}}/settings"><input name="school_year" placeholder="Năm học" value="{{cl.school_year}}"><input name="homeroom_teacher" placeholder="Họ tên GVCN" value="{{cl.homeroom_teacher}}"><input name="teacher_phone" placeholder="Điện thoại GVCN" value="{{cl.teacher_phone}}"><button>Lưu</button></form></section><section><h2>Thêm học sinh thủ công</h2><form method="post" action="/class/{{cl.id}}/student/add"><input name="student_code" placeholder="Mã học sinh" required><input name="name" placeholder="Họ và tên" required><input type="date" name="birth_date"><input name="gender" placeholder="Giới tính"><input name="phone" placeholder="Điện thoại HS"><input name="parent_name" placeholder="Họ tên phụ huynh"><input name="parent_phone" placeholder="Điện thoại phụ huynh"><button>Thêm học sinh</button></form></section><section><h2>Danh sách học sinh ({{students|length}})</h2>
+<details style="margin-top:10px" open><summary>Nhập từ file LaTeX (.tex) — theo tổ &amp; chỗ ngồi</summary>
+<p class="muted" style="margin:8px 0">Tải mẫu có sẵn cột <b>Tổ / Hàng / Cột</b>, hoặc dùng marker <code>% Tổ 1</code> / <code>\section*{Tổ 1}</code>. Hàng 1 gần bảng; cột 1 từ trái nhìn lên bảng.</p>
+<p><a href="/class/{{cl.id}}/seating-template.tex">⬇ Tải mẫu LaTeX theo tổ (mau_so_do_theo_to.tex)</a></p>
+<form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-tex"><input type="file" name="tex_file" accept=".tex" required><button>Đọc và cập nhật .tex</button></form>
+</details></section>
+
+<section id="so-do-lop"><h2>Sơ đồ lớp</h2>
+<p class="muted">Lưới chỗ ngồi theo hàng × cột. Màu viền trái theo tổ. Học sinh chưa gán chỗ hiện dưới lưới.</p>
+<form method="post" action="/class/{{cl.id}}/seating">
+<div class="layout-fields">
+<label>Số hàng<br><input type="number" name="layout_rows" min="1" max="20" value="{{layout_rows}}" style="width:90px"></label>
+<label>Số cột<br><input type="number" name="layout_cols" min="1" max="20" value="{{layout_cols}}" style="width:90px"></label>
+</div>
+<div class="board">BẢNG GIÁO VIÊN (hàng 1 gần đây)</div>
+<div class="seat-legend">
+<span><i style="background:#315de8"></i>Tổ 1</span><span><i style="background:#16a36a"></i>Tổ 2</span><span><i style="background:#d97706"></i>Tổ 3</span>
+<span><i style="background:#db2777"></i>Tổ 4</span><span><i style="background:#7c3aed"></i>Tổ 5</span><span><i style="background:#0891b2"></i>Tổ 6</span>
+</div>
+<div class="seat-grid" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
+{% for r in range(1, layout_rows+1) %}{% for c in range(1, layout_cols+1) %}
+{% set st = seat_map.get((r,c)) %}
+{% if st %}
+{% set tc = st.team if st.team in ['1','2','3','4','5','6'] else 'other' %}
+<a class="seat filled team-{{tc}}" href="/student/{{st.id}}" title="{{st.name}} · {{st.student_code}}">
+<span class="sn">{{ short_name(st.name) }}</span>
+<span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+</a>
+{% else %}
+<div class="seat"><span class="meta">H{{r}}-C{{c}}</span></div>
+{% endif %}
+{% endfor %}{% endfor %}
+</div>
+{% if unseated %}
+<p class="muted" style="margin-top:12px">Chưa xếp chỗ ({{unseated|length}}): {% for s in unseated %}<a href="/student/{{s.id}}">{{s.name}}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+{% endif %}
+<details style="margin-top:12px"><summary>Gán tổ / hàng / cột cho từng học sinh</summary>
+<div class="seat-assign"><table><thead><tr><th>Mã</th><th>Họ tên</th><th>Tổ</th><th>Hàng</th><th>Cột</th><th>Xóa chỗ</th></tr></thead><tbody>
+{% for s in students %}
+<tr>
+<td>{{s.student_code}}</td><td>{{s.name}}</td>
+<td><input name="team_{{s.id}}" value="{{s.team or ''}}" placeholder="1" style="width:56px"></td>
+<td><input type="number" name="seat_row_{{s.id}}" value="{{s.seat_row or ''}}" min="1" max="{{layout_rows}}" style="width:70px"></td>
+<td><input type="number" name="seat_col_{{s.id}}" value="{{s.seat_col or ''}}" min="1" max="{{layout_cols}}" style="width:70px"></td>
+<td><label style="font-size:12px"><input type="checkbox" name="clear_seat_{{s.id}}" value="1"> Bỏ chỗ</label></td>
+</tr>
+{% endfor %}
+</tbody></table></div>
+</details>
+<p style="margin-top:12px"><button type="submit">Lưu sơ đồ &amp; tổ/chỗ</button></p>
+</form></section>
+
+<section><h2>Thông tin lớp / GVCN</h2><form method="post" action="/class/{{cl.id}}/settings"><input name="school_year" placeholder="Năm học" value="{{cl.school_year}}"><input name="homeroom_teacher" placeholder="Họ tên GVCN" value="{{cl.homeroom_teacher}}"><input name="teacher_phone" placeholder="Điện thoại GVCN" value="{{cl.teacher_phone}}"><button>Lưu</button></form></section><section><h2>Thêm học sinh thủ công</h2><form method="post" action="/class/{{cl.id}}/student/add"><input name="student_code" placeholder="Mã học sinh" required><input name="name" placeholder="Họ và tên" required><input type="date" name="birth_date"><input name="gender" placeholder="Giới tính"><input name="phone" placeholder="Điện thoại HS"><input name="parent_name" placeholder="Họ tên phụ huynh"><input name="parent_phone" placeholder="Điện thoại phụ huynh"><button>Thêm học sinh</button></form></section><section><h2>Danh sách học sinh ({{students|length}})</h2>
 <p style="color:#66758b;font-size:13px;margin-top:-5px">Tích chọn trực tiếp từng học sinh rồi lưu một lần cho cả lớp. Cột mã và tên được cố định khi cuộn ngang.</p>
 <form method="post" action="/class/{{cl.id}}/bulk-record" id="bulkForm">
 <div class="quick-head">
