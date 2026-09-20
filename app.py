@@ -16,6 +16,19 @@ app.config.update(
 )
 DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
 
+def ensure_db_dir():
+    parent=os.path.dirname(os.path.abspath(DB_PATH))
+    if parent: os.makedirs(parent, exist_ok=True)
+
+def db_ephemeral_warning():
+    """On Render, warn when SQLite is not under /var/data (Persistent Disk mount)."""
+    if os.environ.get("RENDER") != "true":
+        return False
+    path=os.path.abspath(DB_PATH).replace("\\","/")
+    return not path.startswith("/var/data")
+
+ensure_db_dir()
+
 def db():
     conn=sqlite3.connect(DB_PATH)
     conn.row_factory=sqlite3.Row
@@ -346,7 +359,12 @@ def upsert_attendance(c, student_id, day, status, note=""):
 @app.route("/")
 def index():
     with db() as c: classes=c.execute("SELECT * FROM classes ORDER BY name").fetchall()
-    return render_template("index.html", classes=classes)
+    return render_template(
+        "index.html",
+        classes=classes,
+        db_path=DB_PATH,
+        db_ephemeral=db_ephemeral_warning(),
+    )
 
 @app.post("/class/add")
 def add_class():
