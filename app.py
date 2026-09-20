@@ -178,7 +178,7 @@ def change_password():
 def init_db():
     with db() as c:
         c.executescript("""
-        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, school_year TEXT DEFAULT '', homeroom_teacher TEXT DEFAULT '', teacher_phone TEXT DEFAULT '', layout_rows INTEGER DEFAULT 6, layout_cols INTEGER DEFAULT 7);
+        CREATE TABLE IF NOT EXISTS classes(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, school_year TEXT DEFAULT '', homeroom_teacher TEXT DEFAULT '', teacher_phone TEXT DEFAULT '', layout_rows INTEGER DEFAULT 6, layout_cols INTEGER DEFAULT 8);
         CREATE TABLE IF NOT EXISTS students(id INTEGER PRIMARY KEY, class_id INTEGER NOT NULL, student_code TEXT NOT NULL, name TEXT NOT NULL, birth_date TEXT DEFAULT '', gender TEXT DEFAULT '', note TEXT DEFAULT '', phone TEXT DEFAULT '', parent_name TEXT DEFAULT '', parent_phone TEXT DEFAULT '', team TEXT DEFAULT '', seat_row INTEGER, seat_col INTEGER, FOREIGN KEY(class_id) REFERENCES classes(id), UNIQUE(class_id,student_code));
         CREATE TABLE IF NOT EXISTS attendance(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, status TEXT NOT NULL, note TEXT DEFAULT '');
         CREATE TABLE IF NOT EXISTS student_events(id INTEGER PRIMARY KEY, student_id INTEGER NOT NULL, day TEXT NOT NULL, event_type TEXT NOT NULL, points REAL DEFAULT 0, note TEXT DEFAULT '', subject TEXT DEFAULT '', lesson TEXT DEFAULT '');
@@ -696,7 +696,7 @@ def import_snapshot(snap):
                 """INSERT INTO classes(id,name,school_year,homeroom_teacher,teacher_phone,layout_rows,layout_cols)
                    VALUES(?,?,?,?,?,?,?)""",
                 (row.get("id"), row.get("name"), row.get("school_year",""), row.get("homeroom_teacher",""),
-                 row.get("teacher_phone",""), row.get("layout_rows") or 6, row.get("layout_cols") or 7),
+                 row.get("teacher_phone",""), row.get("layout_rows") or 6, row.get("layout_cols") or 8),
             )
         for row in snap.get("students") or []:
             c.execute(
@@ -1148,7 +1148,7 @@ def class_page(cid):
                 "today_status": today_att["status"] if today_att else "",
             }
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
-    rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 7)
+    rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 8)
     seat_map, unseated=build_seat_map(students, rows, cols)
     photo_urls, photo_folder, photo_count = student_photo_urls(cl["name"], students)
     return render_template(
@@ -1357,8 +1357,8 @@ def seating_template(cid):
 def save_seating(cid):
     try: rows=max(1, min(20, int(request.form.get("layout_rows") or 6)))
     except ValueError: rows=6
-    try: cols=max(1, min(20, int(request.form.get("layout_cols") or 7)))
-    except ValueError: cols=7
+    try: cols=max(1, min(20, int(request.form.get("layout_cols") or 8)))
+    except ValueError: cols=8
     with db() as c:
         if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
             return "Không tìm thấy lớp",404
