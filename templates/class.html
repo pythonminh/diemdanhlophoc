@@ -42,6 +42,13 @@ tr.att-late td{background:#fff8e8!important}
 .seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere;pointer-events:none}
 .seat .meta{color:#718096;font-size:10px;pointer-events:none}
 .seat-icons{display:flex;flex-wrap:wrap;gap:2px;margin-top:3px;pointer-events:none}
+.seat-photo{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:7px;display:block;pointer-events:none;background:#e8eef5;margin:0 0 3px}
+.seat.has-photo{min-height:110px;padding:4px}
+.seat.has-photo .sn{font-size:11px}
+.sd-avatar{width:96px;height:96px;border-radius:14px;object-fit:cover;background:#e8eef5;display:block;margin:0 0 10px;box-shadow:0 4px 14px #0b3d3a18}
+.photo-panel{margin:10px 0 14px;padding:12px;border:1px dashed #b7d0ca;border-radius:12px;background:#f3faf8}
+.photo-panel form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.photo-panel input[type=file]{font-size:12px;max-width:100%}
 .ico{font-size:9px;font-weight:800;padding:1px 4px;border-radius:4px;line-height:1.25;letter-spacing:.02em}
 .ico.g-nam{background:#dbeafe;color:#1d4ed8}.ico.g-nu{background:#fce7f3;color:#be185d}.ico.g-khac{background:#e2e8f0;color:#475569}
 .ico.pts-pos{background:#dcfce7;color:#15803d}.ico.pts-neg{background:#fee2e2;color:#b91c1c}.ico.pts-zero{background:#f1f5f9;color:#64748b}
@@ -164,6 +171,16 @@ tr.att-late td{background:#fff8e8!important}
 
 <section id="so-do-lop"><h2>Sơ đồ lớp</h2>
 <p class="muted">Kéo thả tên vào ô chỗ ngồi (máy tính), hoặc chạm chọn tên rồi chạm ô (điện thoại). Bấm <b>Lưu sơ đồ</b> để ghi vào server.</p>
+<div class="photo-panel">
+<b>Ảnh học sinh trên sơ đồ</b>
+<p class="muted" style="margin:6px 0 0">Thư mục <code>anh-lop/{{photo_folder}}/</code> — đặt tên file theo <b>mã HS</b> (VD: <code>HS019.jpg</code>). Đang có <b>{{photo_count}}</b> ảnh. Commit lên GitHub để Render giữ ảnh sau khi restart.</p>
+{% if session.get("can_edit") %}
+<form method="post" action="/class/{{cl.id}}/photos-bulk" enctype="multipart/form-data">
+<input type="file" name="photos" accept="image/jpeg,image/png,image/webp,image/gif" multiple>
+<button type="submit">Tải ảnh lên lớp</button>
+</form>
+{% endif %}
+</div>
 <form method="post" action="/class/{{cl.id}}/seating" id="seatingForm">
 {% for s in students %}
 <input type="hidden" name="team_{{s.id}}" id="team_{{s.id}}" value="{{s.team or ''}}">
@@ -197,7 +214,8 @@ tr.att-late td{background:#fff8e8!important}
 {% set g = (st.gender or '')|lower %}
 {% set att = sm.today_status or '' %}
 {% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+{% if photo_urls.get(st.id) %}<img class="seat-photo" src="{{photo_urls[st.id]}}" alt="" loading="lazy">{% endif %}
 <span class="sn">{{ short_name(st.name) }}</span>
 <span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
 <span class="seat-icons">
@@ -224,7 +242,8 @@ tr.att-late td{background:#fff8e8!important}
 {% set g = (st.gender or '')|lower %}
 {% set att = sm.today_status or '' %}
 {% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+{% if photo_urls.get(st.id) %}<img class="seat-photo" src="{{photo_urls[st.id]}}" alt="" loading="lazy">{% endif %}
 <span class="sn">{{ short_name(st.name) }}</span>
 <span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
 <span class="seat-icons">
@@ -349,6 +368,7 @@ STUDENTS["{{s.id}}"]={
  parent_phone:{{ (s.parent_phone or '')|tojson }},
  avg10:{{ (s.avg_grade_10 or '')|tojson }},
  avg11:{{ (s.avg_grade_11 or '')|tojson }},
+ photo:{{ (photo_urls.get(s.id) or '')|tojson }},
  points:{{ sm.total_points|float }},
  pos:{{ sm.pos_n }},
  neg:{{ sm.neg_n }},
@@ -465,10 +485,19 @@ function openSeatDetail(sid){
   }).join('');
  }
  const body=document.getElementById('seatDetailBody');
+ const avatar=info.photo ? '<img class="sd-avatar" src="'+esc(info.photo)+'" alt="">' : '';
+ let uploadHtml='';
+ {% if session.get("can_edit") %}
+ uploadHtml='<form method="post" action="/class/{{cl.id}}/photo/'+encodeURIComponent(sid)+'" enctype="multipart/form-data" style="margin:8px 0 12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">'
+  +'<input type="file" name="photo" accept="image/*" required style="font-size:12px">'
+  +'<button type="submit" style="min-height:36px;padding:0 12px;font-size:13px">'+(info.photo?'Đổi ảnh':'Thêm ảnh')+'</button></form>';
+ {% endif %}
  body.innerHTML=
-  '<h3>'+esc(info.name)+'</h3>'
+  avatar
+  +'<h3>'+esc(info.name)+'</h3>'
   +'<p class="sd-meta">'+esc(info.code)+(team?' · Tổ '+esc(team):'')+(info.gender?' · '+esc(info.gender):'')+(info.birth?' · NS '+esc(info.birth):'')
   +(info.att?' · Hôm nay: '+esc(info.att):'')+'</p>'
+  +uploadHtml
   +'<div class="sd-stats">'+seatIconsHtml(info)+' '+avgBits.join(' ')+'</div>'
   +'<div class="sd-contact">'+contact+'</div>'
   +'<div class="sd-col"><h4>Điểm trung bình năm</h4>'
@@ -509,10 +538,12 @@ function refreshSeatVisual(seat){
  seat.classList.add('filled');
  const tc=teamClass(team); if(tc) seat.classList.add(tc);
  const att=attBadge(info.att); if(att.cls) seat.classList.add(att.cls);
+ if(info.photo) seat.classList.add('has-photo');
  seat.draggable=true;
  const tip=[info.name, info.code, (Number(info.points)||0).toFixed(1)+' điểm', info.att].filter(Boolean).join(' · ');
  seat.title=tip;
- seat.innerHTML='<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>'+seatIconsHtml(info);
+ const img=info.photo ? '<img class="seat-photo" src="'+esc(info.photo)+'" alt="" loading="lazy">' : '';
+ seat.innerHTML=img+'<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>'+seatIconsHtml(info);
 }
 window.refreshSeatVisual=refreshSeatVisual;
 

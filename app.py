@@ -1,10 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
-import sqlite3, os, re, hashlib, hmac, json, base64, urllib.request, urllib.error
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, send_from_directory, abort
+import sqlite3, os, re, hashlib, hmac, json, base64, urllib.request, urllib.error, unicodedata
+from urllib.parse import urlparse
 from datetime import timedelta
 from datetime import date, datetime
 from io import BytesIO
 import csv
 from openpyxl import Workbook, load_workbook
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret")
@@ -93,7 +95,36 @@ def verify_password(password, salt, digest):
 def require_edit_password_for_mutations():
     if request.method == "POST" and request.endpoint != "login" and not session.get("can_edit"):
         flash("Cần đăng nhập bằng mật khẩu chỉnh sửa để thao tác.")
-        return redirect(url_for("login", next=request.path))
+        # After login, send user back to the page they were viewing — never to a POST-only URL
+        # (e.g. /class/10/seating), otherwise the browser GETs it and gets HTTP 405.
+        next_url = None
+        ref = request.referrer or ""
+        if ref:
+            try:
+                parsed = urlparse(ref)
+                if parsed.path and not parsed.path.startswith("//"):
+                    next_url = parsed.path
+                    if parsed.query:
+                        next_url += "?" + parsed.query
+                    if parsed.fragment:
+                        next_url += "#" + parsed.fragment
+            except Exception:
+                next_url = None
+        if not next_url:
+            path = request.path or "/"
+            for suffix in ("/seating", "/photos-bulk", "/bulk-record", "/import-xlsx", "/import-text", "/import-tex", "/settings", "/plan", "/student/add"):
+                if path.endswith(suffix):
+                    next_url = path[: -len(suffix)] or "/"
+                    if suffix == "/seating":
+                        next_url += "#so-do-lop"
+                    break
+            # /class/<id>/photo/<sid>
+            m = re.match(r"^(/class/\d+)/photo/\d+$", path)
+            if m:
+                next_url = m.group(1) + "#so-do-lop"
+        if not next_url:
+            next_url = url_for("index")
+        return redirect(url_for("login", next=next_url))
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -111,6 +142,11 @@ def login():
             # Only allow local relative paths to prevent open redirects.
             if not next_url.startswith("/") or next_url.startswith("//"):
                 next_url = url_for("index")
+            # Never bounce onto POST-only mutation URLs after login.
+            if next_url.rstrip("/").endswith("/seating"):
+                base = next_url.rstrip("/").rsplit("/seating", 1)[0]
+                next_url = (base or "/") + "#so-do-lop"
+                flash("Đã đăng nhập — xếp chỗ rồi bấm «Lưu sơ đồ» lại.")
             return redirect(next_url)
         flash("Mật khẩu không đúng.")
     return render_template("login.html", next=request.args.get("next", ""))
@@ -409,11 +445,13 @@ def build_seat_map(students, rows, cols):
     return seat_map, unseated
 
 DANH_SACH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "danh-sach")
+ANH_LOP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "anh-lop")
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 SNAPSHOT_PATH = os.path.join(DATA_DIR, "snapshot.json")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "pythonminh/diemdanhlophoc").strip()
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main").strip()
+PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 
 # Folder name → tên hiển thị trong app
 CLASS_DISPLAY_NAMES = {
@@ -421,12 +459,93 @@ CLASS_DISPLAY_NAMES = {
     "NguyenVanDau": "Nguyễn Văn Đậu",
     "QuangTrung": "Quang Trung",
 }
+CLASS_FOLDER_FROM_NAME = {v: k for k, v in CLASS_DISPLAY_NAMES.items()}
 
 def class_name_from_folder(folder_name):
     name = (folder_name or "").strip()
     if name.lower().startswith("class"):
         name = name[5:]
     return CLASS_DISPLAY_NAMES.get(name, name)
+
+def fold_key(s):
+    """Lowercase ASCII-ish key for matching photo filenames to names/codes."""
+    s = unicodedata.normalize("NFD", str(s or ""))
+    s = "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+    return re.sub(r"[^a-z0-9]+", "", s.lower())
+
+def class_photo_folder_name(class_name):
+    name = (class_name or "").strip()
+    return CLASS_FOLDER_FROM_NAME.get(name, name)
+
+def class_photo_dir(class_name, create=False):
+    folder = class_photo_folder_name(class_name)
+    path = os.path.join(ANH_LOP_DIR, folder)
+    # Prefer existing folder under anh-lop or danh-sach naming
+    if not os.path.isdir(path):
+        for cand in (folder, class_name, CLASS_FOLDER_FROM_NAME.get(class_name, "")):
+            if not cand:
+                continue
+            alt = os.path.join(ANH_LOP_DIR, cand)
+            if os.path.isdir(alt):
+                return alt, cand
+    if create:
+        os.makedirs(path, exist_ok=True)
+    return path, folder
+
+def build_photo_index(photo_dir):
+    """filename stem keys → absolute filename (basename)."""
+    index = {}
+    if not os.path.isdir(photo_dir):
+        return index
+    for fn in os.listdir(photo_dir):
+        base, ext = os.path.splitext(fn)
+        if ext.lower() not in PHOTO_EXTS:
+            continue
+        if fn.startswith("."):
+            continue
+        keys = {fold_key(base), base.strip().lower()}
+        # HS019 → also 019 / 19
+        m = re.match(r"^(?:hs|hv)?0*(\d+)$", fold_key(base), re.I)
+        if m:
+            keys.add(m.group(1))
+            keys.add(m.group(1).zfill(3))
+        for k in keys:
+            if k and k not in index:
+                index[k] = fn
+    return index
+
+def find_photo_filename(index, student_code, student_name):
+    code = (student_code or "").strip()
+    name = (student_name or "").strip()
+    candidates = []
+    if code:
+        candidates += [fold_key(code), code.lower(), fold_key(code).lstrip("hs")]
+        m = re.search(r"(\d+)", code)
+        if m:
+            candidates += [m.group(1), m.group(1).lstrip("0") or "0", m.group(1).zfill(3)]
+    if name:
+        candidates.append(fold_key(name))
+        parts = [p for p in name.split() if p]
+        if len(parts) >= 2:
+            candidates.append(fold_key(parts[-1] + parts[0]))
+            candidates.append(fold_key("".join(parts)))
+    for key in candidates:
+        if key and key in index:
+            return index[key]
+    return None
+
+def student_photo_urls(class_name, students):
+    """Map student id → URL path for photo (or empty)."""
+    photo_dir, folder = class_photo_dir(class_name, create=False)
+    index = build_photo_index(photo_dir)
+    urls = {}
+    for st in students:
+        fn = find_photo_filename(index, st["student_code"], st["name"])
+        if fn:
+            urls[st["id"]] = url_for("serve_class_photo", folder=folder, filename=fn)
+        else:
+            urls[st["id"]] = ""
+    return urls, folder, len(index)
 
 def _read_tex(path):
     try:
@@ -835,10 +954,12 @@ def class_page(cid):
         plans=c.execute("SELECT * FROM lesson_plans WHERE class_id=? ORDER BY day DESC,id DESC",(cid,)).fetchall()
     rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 7)
     seat_map, unseated=build_seat_map(students, rows, cols)
+    photo_urls, photo_folder, photo_count = student_photo_urls(cl["name"], students)
     return render_template(
         "class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans,
         today=date.today().isoformat(), event_defaults=EVENT_DEFAULTS,
         layout_rows=rows, layout_cols=cols, seat_map=seat_map, unseated=unseated, short_name=short_name,
+        photo_urls=photo_urls, photo_folder=photo_folder, photo_count=photo_count,
     )
 
 
@@ -922,6 +1043,111 @@ STT & Mã HS & Họ và tên & Ngày sinh & GT & Tổ & Hàng & Cột \\
 % Tổ 3
 % 1 & HS005 & HOÀNG VĂN E & 20/01/2011 & Nam \\
 """
+
+@app.get("/anh-lop/<folder>/<path:filename>")
+def serve_class_photo(folder, filename):
+    folder = secure_filename(folder) or folder
+    # Keep unicode folder names like 10T1; only block path traversal.
+    folder = folder.replace("..", "").replace("/", "").replace("\\", "").strip()
+    if not folder:
+        abort(404)
+    base = os.path.realpath(os.path.join(ANH_LOP_DIR, folder))
+    root = os.path.realpath(ANH_LOP_DIR)
+    if not base.startswith(root + os.sep) and base != root:
+        abort(404)
+    safe_name = os.path.basename(filename)
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in PHOTO_EXTS:
+        abort(404)
+    path = os.path.join(base, safe_name)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_from_directory(base, safe_name, max_age=86400)
+
+@app.post("/class/<int:cid>/photo/<int:sid>")
+def upload_student_photo(cid, sid):
+    upload = request.files.get("photo")
+    if not upload or not upload.filename:
+        flash("Chọn file ảnh học sinh.")
+        return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
+    ext = os.path.splitext(upload.filename)[1].lower()
+    if ext not in PHOTO_EXTS:
+        flash("Chỉ nhận ảnh .jpg .jpeg .png .webp .gif")
+        return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
+    with db() as c:
+        st = c.execute("SELECT * FROM students WHERE id=? AND class_id=?", (sid, cid)).fetchone()
+        cl = c.execute("SELECT name FROM classes WHERE id=?", (cid,)).fetchone()
+        if not st or not cl:
+            return "Không tìm thấy", 404
+    photo_dir, _folder = class_photo_dir(cl["name"], create=True)
+    code = secure_filename(st["student_code"] or f"hs{sid}") or f"hs{sid}"
+    # Remove old photos for this code (any ext)
+    for fn in list(os.listdir(photo_dir)):
+        stem, e = os.path.splitext(fn)
+        if stem.lower() == code.lower() and e.lower() in PHOTO_EXTS:
+            try:
+                os.remove(os.path.join(photo_dir, fn))
+            except OSError:
+                pass
+    dest = os.path.join(photo_dir, code + ext)
+    upload.save(dest)
+    flash(f"Đã lưu ảnh {code}{ext} vào anh-lop/{_folder}/. Nên commit lên GitHub để giữ sau khi Render restart.")
+    return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
+
+@app.post("/class/<int:cid>/photos-bulk")
+def upload_class_photos_bulk(cid):
+    files = request.files.getlist("photos")
+    if not files:
+        flash("Chọn một hoặc nhiều ảnh (đặt tên theo mã HS, VD: HS019.jpg).")
+        return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
+    with db() as c:
+        cl = c.execute("SELECT name FROM classes WHERE id=?", (cid,)).fetchone()
+        if not cl:
+            return "Không tìm thấy lớp", 404
+        codes = {
+            (r["student_code"] or "").strip().lower(): r["student_code"]
+            for r in c.execute("SELECT student_code FROM students WHERE class_id=?", (cid,)).fetchall()
+        }
+    photo_dir, folder = class_photo_dir(cl["name"], create=True)
+    saved = skipped = 0
+    for upload in files:
+        if not upload or not upload.filename:
+            continue
+        ext = os.path.splitext(upload.filename)[1].lower()
+        if ext not in PHOTO_EXTS:
+            skipped += 1
+            continue
+        stem = os.path.splitext(os.path.basename(upload.filename))[0]
+        key = fold_key(stem)
+        # Prefer matching known student codes
+        dest_stem = None
+        for ck, original in codes.items():
+            if key == fold_key(ck) or key == fold_key(ck).lstrip("hs"):
+                dest_stem = secure_filename(original) or original
+                break
+            m = re.search(r"(\d+)", ck)
+            m2 = re.search(r"(\d+)", key)
+            if m and m2 and m.group(1).lstrip("0") == m2.group(1).lstrip("0"):
+                dest_stem = secure_filename(original) or original
+                break
+        if not dest_stem:
+            dest_stem = secure_filename(stem) or fold_key(stem) or f"anh{saved+1}"
+        # clear old
+        for fn in list(os.listdir(photo_dir)):
+            s, e = os.path.splitext(fn)
+            if s.lower() == dest_stem.lower() and e.lower() in PHOTO_EXTS:
+                try: os.remove(os.path.join(photo_dir, fn))
+                except OSError: pass
+        upload.save(os.path.join(photo_dir, dest_stem + ext))
+        saved += 1
+    flash(f"Đã lưu {saved} ảnh vào anh-lop/{folder}/" + (f" (bỏ qua {skipped})" if skipped else "") + ". Commit GitHub để giữ lâu dài.")
+    return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
+
+@app.get("/class/<int:cid>/seating")
+def seating_get(cid):
+    """Browser may land here via refresh or post-login redirect — never 405."""
+    flash("Trang này chỉ dùng để lưu sơ đồ. Hãy xếp chỗ rồi bấm «Lưu sơ đồ».")
+    return redirect(url_for("class_page", cid=cid) + "#so-do-lop")
 
 @app.get("/class/<int:cid>/seating-template.tex")
 def seating_template(cid):
