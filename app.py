@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file
-import sqlite3, os, re, hashlib, hmac
+import sqlite3, os, re, hashlib, hmac, json, base64, urllib.request, urllib.error
 from datetime import timedelta
-from datetime import date
+from datetime import date, datetime
 from io import BytesIO
 import csv
 from openpyxl import Workbook, load_workbook
@@ -360,6 +360,176 @@ def build_seat_map(students, rows, cols):
     return seat_map, unseated
 
 DANH_SACH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "danh-sach")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+SNAPSHOT_PATH = os.path.join(DATA_DIR, "snapshot.json")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "pythonminh/diemdanhlophoc").strip()
+GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main").strip()
+
+def _rows(c, sql, args=()):
+    return [dict(r) for r in c.execute(sql, args).fetchall()]
+
+def build_snapshot():
+    with db() as c:
+        return {
+            "version": 1,
+            "exported_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "classes": _rows(c, "SELECT * FROM classes ORDER BY id"),
+            "students": _rows(c, "SELECT * FROM students ORDER BY id"),
+            "attendance": _rows(c, "SELECT * FROM attendance ORDER BY id"),
+            "student_events": _rows(c, "SELECT * FROM student_events ORDER BY id"),
+            "lesson_plans": _rows(c, "SELECT * FROM lesson_plans ORDER BY id"),
+            "app_settings": _rows(c, "SELECT * FROM app_settings ORDER BY key"),
+        }
+
+def save_snapshot_local(snapshot=None):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    snap = snapshot or build_snapshot()
+    with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+        json.dump(snap, f, ensure_ascii=False, indent=2)
+    return SNAPSHOT_PATH, snap
+
+def import_snapshot(snap):
+    """Replace operational tables from a snapshot (keeps schema)."""
+    if not isinstance(snap, dict) or "classes" not in snap:
+        raise ValueError("Snapshot không hợp lệ")
+    with db() as c:
+        c.executescript("""
+            DELETE FROM attendance;
+            DELETE FROM student_events;
+            DELETE FROM lesson_plans;
+            DELETE FROM students;
+            DELETE FROM classes;
+        """)
+        for row in snap.get("classes") or []:
+            c.execute(
+                """INSERT INTO classes(id,name,school_year,homeroom_teacher,teacher_phone,layout_rows,layout_cols)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (row.get("id"), row.get("name"), row.get("school_year",""), row.get("homeroom_teacher",""),
+                 row.get("teacher_phone",""), row.get("layout_rows") or 6, row.get("layout_cols") or 7),
+            )
+        for row in snap.get("students") or []:
+            c.execute(
+                """INSERT INTO students(id,class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (row.get("id"), row.get("class_id"), row.get("student_code"), row.get("name"),
+                 row.get("birth_date",""), row.get("gender",""), row.get("note",""), row.get("phone",""),
+                 row.get("parent_name",""), row.get("parent_phone",""), row.get("team",""),
+                 row.get("seat_row"), row.get("seat_col")),
+            )
+        for row in snap.get("attendance") or []:
+            c.execute(
+                "INSERT INTO attendance(id,student_id,day,status,note) VALUES(?,?,?,?,?)",
+                (row.get("id"), row.get("student_id"), row.get("day"), row.get("status"), row.get("note","")),
+            )
+        for row in snap.get("student_events") or []:
+            c.execute(
+                """INSERT INTO student_events(id,student_id,day,event_type,points,note,subject,lesson)
+                   VALUES(?,?,?,?,?,?,?,?)""",
+                (row.get("id"), row.get("student_id"), row.get("day"), row.get("event_type"),
+                 row.get("points") or 0, row.get("note",""), row.get("subject",""), row.get("lesson","")),
+            )
+        for row in snap.get("lesson_plans") or []:
+            c.execute(
+                """INSERT INTO lesson_plans(id,class_id,subject,lesson,day,period,note)
+                   VALUES(?,?,?,?,?,?,?)""",
+                (row.get("id"), row.get("class_id"), row.get("subject"), row.get("lesson"),
+                 row.get("day",""), row.get("period",""), row.get("note","")),
+            )
+        if snap.get("app_settings"):
+            for row in snap["app_settings"]:
+                c.execute(
+                    "INSERT OR REPLACE INTO app_settings(key,value) VALUES(?,?)",
+                    (row.get("key"), row.get("value")),
+                )
+    return (
+        len(snap.get("classes") or []),
+        len(snap.get("students") or []),
+        len(snap.get("attendance") or []),
+        len(snap.get("student_events") or []),
+    )
+
+def load_snapshot_file(path=SNAPSHOT_PATH):
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def github_api(method, url_path, body=None):
+    url = "https://api.github.com" + url_path
+    data = None if body is None else json.dumps(body).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("Accept", "application/vnd.github+json")
+    req.add_header("User-Agent", "diemdanhlophoc")
+    if GITHUB_TOKEN:
+        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        err = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"GitHub API {e.code}: {err[:300]}") from e
+
+def push_snapshot_to_github(snap=None):
+    if not GITHUB_TOKEN:
+        raise RuntimeError("Chưa đặt GITHUB_TOKEN trên Render (Settings → Environment).")
+    snap = snap or build_snapshot()
+    content_b64 = base64.b64encode(json.dumps(snap, ensure_ascii=False, indent=2).encode("utf-8")).decode("ascii")
+    api_path = f"/repos/{GITHUB_REPO}/contents/data/snapshot.json"
+    sha = None
+    try:
+        existing = github_api("GET", f"{api_path}?ref={GITHUB_BRANCH}")
+        sha = existing.get("sha")
+    except RuntimeError:
+        sha = None
+    body = {
+        "message": f"chore: lưu snapshot điểm danh {snap.get('exported_at','')}",
+        "content": content_b64,
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        body["sha"] = sha
+    result = github_api("PUT", api_path, body)
+    save_snapshot_local(snap)  # keep local copy in container too
+    return result.get("content", {}).get("html_url") or f"https://github.com/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/data/snapshot.json"
+
+def fetch_snapshot_from_github():
+    """Read data/snapshot.json from GitHub (token optional for public repos)."""
+    if GITHUB_TOKEN:
+        api_path = f"/repos/{GITHUB_REPO}/contents/data/snapshot.json?ref={GITHUB_BRANCH}"
+        meta = github_api("GET", api_path)
+        raw = base64.b64decode(meta.get("content", "").replace("\n", "")).decode("utf-8")
+        return json.loads(raw)
+    raw_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/data/snapshot.json"
+    req = urllib.request.Request(raw_url, headers={"User-Agent": "diemdanhlophoc"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+def restore_data_if_empty():
+    """Prefer full snapshot (GitHub/local), else danh-sach/*.tex roster only."""
+    with db() as c:
+        if c.execute("SELECT COUNT(*) FROM classes").fetchone()[0] > 0:
+            return "keep"
+    # 1) local file shipped with deploy
+    snap = load_snapshot_file()
+    if snap:
+        import_snapshot(snap)
+        return "local-snapshot"
+    # 2) pull from GitHub
+    try:
+        snap = fetch_snapshot_from_github()
+        if snap:
+            import_snapshot(snap)
+            save_snapshot_local(snap)
+            return "github-snapshot"
+    except Exception:
+        pass
+    # 3) roster-only from tex
+    sync_classes_from_danh_sach(only_if_empty=True)
+    return "tex"
 
 def sync_classes_from_danh_sach(only_if_empty=False):
     """Create/update classes from danh-sach/*.tex (skip mau_*.tex). Roster comes back from git after wipe."""
@@ -398,8 +568,8 @@ def sync_classes_from_danh_sach(only_if_empty=False):
             added+=result[0]; updated+=result[1]
     return created, added, updated
 
-# Empty DB after Render wipe → restore class roster from files committed in repo.
-sync_classes_from_danh_sach(only_if_empty=True)
+# Empty DB after Render wipe → restore from GitHub/local snapshot, else tex roster.
+restore_data_if_empty()
 
 def upsert_attendance(c, student_id, day, status, note=""):
     """One attendance row per student per day: update latest, drop older duplicates."""
@@ -420,7 +590,47 @@ def upsert_attendance(c, student_id, day, status, note=""):
 @app.post("/restore-from-tex")
 def restore_from_tex():
     created, added, updated = sync_classes_from_danh_sach(only_if_empty=False)
-    flash(f"Đã đồng bộ từ danh-sach/*.tex: tạo {created} lớp, thêm {added} HS, cập nhật {updated} HS. (Điểm danh/sự kiện cũ vẫn giữ nếu DB chưa bị xóa.)")
+    flash(f"Đã đồng bộ từ danh-sach/*.tex: tạo {created} lớp, thêm {added} HS, cập nhật {updated} HS.")
+    return redirect(url_for("index"))
+
+@app.get("/snapshot.json")
+def download_snapshot():
+    path, _ = save_snapshot_local()
+    return send_file(path, as_attachment=True, download_name="snapshot.json", mimetype="application/json")
+
+@app.post("/snapshot/save-github")
+def snapshot_save_github():
+    try:
+        url = push_snapshot_to_github()
+        flash(f"Đã lưu toàn bộ dữ liệu lên GitHub: {url}")
+    except Exception as e:
+        flash(f"Không lưu được lên GitHub: {e}")
+    return redirect(url_for("index"))
+
+@app.post("/snapshot/load-github")
+def snapshot_load_github():
+    try:
+        snap = fetch_snapshot_from_github()
+        n = import_snapshot(snap)
+        save_snapshot_local(snap)
+        flash(f"Đã mở từ GitHub: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện.")
+    except Exception as e:
+        flash(f"Không mở được từ GitHub: {e}")
+    return redirect(url_for("index"))
+
+@app.post("/snapshot/import")
+def snapshot_import_upload():
+    upload = request.files.get("snapshot_file")
+    if not upload or not upload.filename:
+        flash("Chọn file snapshot.json.")
+        return redirect(url_for("index"))
+    try:
+        snap = json.loads(upload.read().decode("utf-8"))
+        n = import_snapshot(snap)
+        save_snapshot_local(snap)
+        flash(f"Đã nhập snapshot: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện.")
+    except Exception as e:
+        flash(f"File snapshot không hợp lệ: {e}")
     return redirect(url_for("index"))
 
 @app.route("/")
@@ -432,6 +642,9 @@ def index():
         db_path=DB_PATH,
         db_ephemeral=db_ephemeral_warning(),
         disk_ok=_persistent_disk_mounted() if os.environ.get("RENDER")=="true" else None,
+        github_ready=bool(GITHUB_TOKEN),
+        github_repo=GITHUB_REPO,
+        has_local_snapshot=os.path.isfile(SNAPSHOT_PATH),
     )
 
 @app.post("/class/add")

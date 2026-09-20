@@ -4,9 +4,12 @@ body{font:16px Arial;max-width:1000px;margin:30px auto;padding:0 16px;background
 section,.card{background:white;padding:18px;border-radius:12px;margin:14px 0;box-shadow:0 2px 8px #0001}
 input,button{padding:10px;margin:4px;border:1px solid #ccd2df;border-radius:7px}
 button{background:#2457d6;color:white;border:0;cursor:pointer}a{color:#2457d6}
+button.secondary{background:#475569}
 .warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}
 .ok{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}
+.info{background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}
 .muted{color:#64748b;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 </style>
 <body>
 <div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px">
@@ -21,15 +24,45 @@ button{background:#2457d6;color:white;border:0;cursor:pointer}a{color:#2457d6}
 <h1>Quản lý điểm danh lớp</h1>
 {% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}
 
+<div class="info">
+<b>GitHub lưu code + file snapshot, không tự là database sống.</b>
+Muốn “lưu rồi mở lại trên GitHub”: sau khi điểm danh, bấm <b>Lưu lên GitHub</b> (ghi <code>data/snapshot.json</code>).
+Khi Render xóa DB, bấm <b>Mở từ GitHub</b> hoặc app tự nạp snapshot nếu có.
+</div>
+
 {% if db_ephemeral %}
 <div class="warn">
-<b>Chưa gắn Persistent Disk — dữ liệu sẽ mất khi Deploy/Restart.</b><br>
-DB đang ở <code>{{db_path}}</code>. Trên Render Dashboard → service → <b>Disks</b> → Add disk, mount <code>/var/data</code>, rồi Environment đặt <code>DATABASE_PATH=/var/data/diemdanh.db</code> (gói Starter).<br>
-Danh sách học sinh trong <code>danh-sach/*.tex</code> (vd. 10T1) sẽ <b>tự nạp lại</b> khi DB trống; điểm danh/sự kiện vẫn cần Disk mới giữ được.
+<b>Chưa gắn Persistent Disk</b> — deploy/restart vẫn xóa SQLite local.
+Dùng <b>Lưu lên GitHub</b> sau mỗi buổi học, hoặc gắn Disk <code>/var/data</code>.
 </div>
 {% elif disk_ok %}
-<div class="ok">Đã gắn Persistent Disk — danh sách lớp và điểm danh sẽ giữ sau khi deploy.</div>
+<div class="ok">Đã gắn Persistent Disk — dữ liệu trên server sẽ giữ sau deploy.</div>
 {% endif %}
+
+<section>
+<h2>Lưu / mở trên GitHub</h2>
+<p class="muted">Repo: <code>{{github_repo}}</code> · file <code>data/snapshot.json</code>
+{% if has_local_snapshot %}· đã có bản local{% endif %}
+{% if github_ready %}· đã có <code>GITHUB_TOKEN</code>{% else %}· chưa có <code>GITHUB_TOKEN</code> (cần để <b>lưu</b> lên GitHub){% endif %}
+</p>
+{% if session.get("can_edit") %}
+<div class="row">
+<form method="post" action="/snapshot/save-github"><button type="submit">Lưu lên GitHub</button></form>
+<form method="post" action="/snapshot/load-github"><button type="submit" class="secondary">Mở từ GitHub</button></form>
+<a href="/snapshot.json"><button type="button" class="secondary">Tải snapshot.json</button></a>
+</div>
+<form method="post" enctype="multipart/form-data" action="/snapshot/import" class="row" style="margin-top:10px">
+<input type="file" name="snapshot_file" accept=".json,application/json" required>
+<button type="submit" class="secondary">Nhập file snapshot.json</button>
+</form>
+{% if not github_ready %}
+<p class="muted" style="margin-top:10px">Để lưu lên GitHub: tạo Personal Access Token (nội dung <code>repo</code>), thêm trên Render Environment:<br>
+<code>GITHUB_TOKEN=...</code> · <code>GITHUB_REPO={{github_repo}}</code></p>
+{% endif %}
+{% else %}
+<p class="muted">Đăng nhập chỉnh sửa để lưu/mở snapshot.</p>
+{% endif %}
+</section>
 
 <section>
 <h2>Tạo lớp</h2>
@@ -37,12 +70,10 @@ Danh sách học sinh trong <code>danh-sach/*.tex</code> (vd. 10T1) sẽ <b>tự
 </section>
 
 <section>
-<h2>Đồng bộ danh sách từ GitHub</h2>
-<p class="muted">Đọc file <code>danh-sach/*.tex</code> trong repo (bỏ qua <code>mau_*.tex</code>). Tên file = tên lớp (vd. <code>10T1.tex</code> → lớp 10T1). Mã HS trùng thì cập nhật, không xóa lịch sử.</p>
+<h2>Đồng bộ danh sách từ .tex trong repo</h2>
+<p class="muted">Chỉ nạp roster từ <code>danh-sach/*.tex</code> (vd. 10T1). Không gồm điểm danh.</p>
 {% if session.get("can_edit") %}
-<form method="post" action="/restore-from-tex"><button type="submit">Đồng bộ lại từ danh-sach/*.tex</button></form>
-{% else %}
-<p class="muted">Đăng nhập chỉnh sửa để đồng bộ thủ công.</p>
+<form method="post" action="/restore-from-tex"><button type="submit" class="secondary">Đồng bộ lại từ danh-sach/*.tex</button></form>
 {% endif %}
 </section>
 
@@ -50,6 +81,6 @@ Danh sách học sinh trong <code>danh-sach/*.tex</code> (vd. 10T1) sẽ <b>tự
 {% for cl in classes %}
 <div class="card"><a href="/class/{{cl.id}}"><b>{{cl.name}}</b></a> — {{cl.school_year or "Chưa nhập năm học"}} | GVCN: {{cl.homeroom_teacher or "—"}}</div>
 {% else %}
-<p>Chưa có lớp. Sau deploy, app sẽ tự tạo từ <code>danh-sach/*.tex</code> nếu DB trống — hoặc bấm đồng bộ / tạo lớp mới.</p>
+<p>Chưa có lớp. Mở từ GitHub / đồng bộ .tex / tạo lớp mới.</p>
 {% endfor %}
 </body></html>
