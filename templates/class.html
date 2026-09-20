@@ -63,6 +63,29 @@ tr.att-late td{background:#fff8e8!important}
 .pupil:active{cursor:grabbing}.pupil.selected{outline:2px solid #315de8;background:#eef3ff}
 .pupil .code{color:#718096;font-weight:600;font-size:11px}
 .seat-hint{font-size:12px;color:#53627a;margin:0 0 8px}
+.seat-sheet{position:fixed;inset:0;z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.seat-sheet[hidden]{display:none!important}
+.seat-sheet-backdrop{position:absolute;inset:0;background:#0b3d3a55;backdrop-filter:blur(2px)}
+.seat-sheet-panel{position:relative;z-index:1;width:min(520px,100%);max-height:min(88vh,720px);overflow:auto;background:#fff;border-radius:18px 18px 0 0;box-shadow:0 -12px 40px #0b3d3a33;padding:18px 16px 22px;animation:sheetUp .22s ease-out}
+@keyframes sheetUp{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.seat-sheet-close{position:absolute;top:10px;right:12px;width:36px;height:36px;border:0;border-radius:10px;background:#eef5f3;color:#0b3d3a;font-size:22px;line-height:1;cursor:pointer;padding:0;margin:0;min-height:36px}
+.seat-sheet h3{margin:0 28px 4px 0;font-family:Fraunces,Georgia,serif;font-size:1.25rem;color:#0b3d3a}
+.seat-sheet .sd-meta{color:#5a6f6b;font-size:13px;margin:0 0 12px}
+.seat-sheet .sd-contact{display:grid;gap:8px;margin:0 0 14px}
+.seat-sheet .sd-contact a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border-radius:12px;background:#ecf8f5;border:1px solid #c5e5de;text-decoration:none;color:#0b3d3a;font-weight:700;min-height:44px}
+.seat-sheet .sd-contact a span{font-weight:500;color:#5a6f6b;font-size:12px}
+.seat-sheet .sd-stats{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.seat-sheet .sd-col{margin:0 0 12px}
+.seat-sheet .sd-col h4{margin:0 0 6px;font-size:13px;color:#0b3d3a}
+.seat-sheet .sd-item{padding:8px 0;border-bottom:1px dashed #d5e3df;font-size:13px}
+.seat-sheet .sd-item:last-child{border:0}
+.seat-sheet .sd-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.seat-sheet .sd-actions .btn-ghost{background:#eef5f3;color:#0b3d3a}
+.seat.filled{cursor:pointer}
+@media(min-width:720px){
+ .seat-sheet{align-items:center;padding:16px}
+ .seat-sheet-panel{border-radius:18px;max-height:80vh}
+}
 .seat-assign{width:100%;overflow:auto;margin-top:10px}
 .seat-assign table{min-width:100%;width:max-content}
 .seat-assign th,.seat-assign td{position:static!important;box-shadow:none!important;min-width:auto!important;white-space:nowrap}
@@ -128,7 +151,7 @@ tr.att-late td{background:#fff8e8!important}
 <div class="page-head"><h1>Lớp {{cl.name}}</h1></div>
 {% for m in get_flashed_messages() %}<p style="background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;padding:10px 12px;border-radius:10px">{{m}}</p>{% endfor %}
 <section><h2>Nhập / cập nhật danh sách học sinh</h2>
-<p class="muted">Có thể tải mẫu Excel, điền rồi tải lên; hoặc dán trực tiếp danh sách dạng mỗi dòng: Mã HS, Họ tên, Ngày sinh, Giới tính, Điện thoại HS, Tên phụ huynh, Điện thoại phụ huynh, Ghi chú (ngăn cách bằng tab hoặc dấu phẩy). Mã đã có sẽ cập nhật, mã mới sẽ thêm; lịch sử được giữ.</p>
+<p class="muted">Có thể tải mẫu Excel, điền rồi tải lên; hoặc dán trực tiếp danh sách dạng mỗi dòng: Mã HS, Họ tên, Ngày sinh, Giới tính, Điện thoại HS, Tên phụ huynh, Điện thoại phụ huynh, Ghi chú, Tổ, Hàng, Cột, TB lớp 10, TB lớp 11 (ngăn cách bằng tab hoặc dấu phẩy). Mã đã có sẽ cập nhật, mã mới sẽ thêm; lịch sử được giữ.</p>
 <div class="upload-grid">
 <div class="detail-box"><h4>Nhập Excel</h4><p><a href="/class/{{cl.id}}/students-template.xlsx">⬇ Tải file Excel mẫu</a></p><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-xlsx"><input type="file" name="xlsx_file" accept=".xlsx" required><button>Upload Excel và cập nhật</button></form></div>
 <div class="detail-box"><h4>Dán danh sách trực tiếp</h4><form method="post" action="/class/{{cl.id}}/import-text"><textarea name="students_text" rows="5" style="width:100%;padding:10px;border:1px solid #d6deeb;border-radius:8px" placeholder="HS051&#9;NGUYỄN VĂN B&#9;12/03/2011&#9;Nam" required></textarea><button>Đọc văn bản</button></form></div>
@@ -164,7 +187,7 @@ tr.att-late td{background:#fff8e8!important}
 <span><span class="ico vp">!n</span> vi phạm</span>
 <span><span class="ico att-cm">CM</span> <span class="ico att-vang">Vắng</span> <span class="ico att-tre">Trễ</span> hôm nay</span>
 </div>
-<p class="seat-hint" id="seatHint">Chưa chọn học sinh — kéo hoặc chạm một tên để bắt đầu.</p>
+<p class="seat-hint" id="seatHint">Chạm ô học sinh để xem chi tiết · kéo tên/ô để xếp chỗ · chạm tên ở «Chưa xếp chỗ» rồi chạm ô trống.</p>
 <div class="seat-grid" id="seatGrid" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
 {% for r in range(1, layout_rows+1) %}{% for c in range(1, layout_cols+1) %}
 {% set st = seat_map.get((r,c)) %}
@@ -277,14 +300,24 @@ tr.att-late td{background:#fff8e8!important}
 </tr>
 <tr id="detail-{{s.id}}" class="detail-row" hidden><td colspan="9">
 <div class="detail-grid">
-<div class="detail-box"><h4>Thông tin & tổng điểm</h4><div><b>{{s.name}}</b> · {{s.student_code}}</div><div class="muted">Ngày sinh: {{s.birth_date or "—"}} · {{s.gender or "—"}}</div><div style="margin-top:8px">Tổng điểm lũy kế: <span class="points" style="background:{% if summary.total_points > 0 %}#e8f7ef;color:#13764f{% elif summary.total_points < 0 %}#fff0f1;color:#b83245{% else %}#edf1f7;color:#64748b{% endif %}">{{'+' if summary.total_points > 0 else ''}}{{'%.1f'|format(summary.total_points)}}</span></div><div class="muted" style="margin-top:6px">Số ghi nhận: {{summary.all_events|length}} · Số lần điểm danh: {{summary.attendance|length}}</div><p><a href="/student/{{s.id}}">Mở hồ sơ đầy đủ / chỉnh sửa</a></p></div>
+<div class="detail-box"><h4>Thông tin & tổng điểm</h4><div><b>{{s.name}}</b> · {{s.student_code}}</div><div class="muted">Ngày sinh: {{s.birth_date or "—"}} · {{s.gender or "—"}}</div><div class="muted" style="margin-top:6px">TB lớp 10: <b>{{s.avg_grade_10 or "—"}}</b> · TB lớp 11: <b>{{s.avg_grade_11 or "—"}}</b></div><div class="muted" style="margin-top:4px">Phụ huynh: {{s.parent_name or "—"}}{% if s.parent_phone %} · <a href="tel:{{s.parent_phone}}">{{s.parent_phone}}</a>{% endif %}</div><div style="margin-top:8px">Tổng điểm lũy kế: <span class="points" style="background:{% if summary.total_points > 0 %}#e8f7ef;color:#13764f{% elif summary.total_points < 0 %}#fff0f1;color:#b83245{% else %}#edf1f7;color:#64748b{% endif %}">{{'+' if summary.total_points > 0 else ''}}{{'%.1f'|format(summary.total_points)}}</span></div><div class="muted" style="margin-top:6px">Số ghi nhận: {{summary.all_events|length}} · Số lần điểm danh: {{summary.attendance|length}}</div><p><a href="/student/{{s.id}}">Mở hồ sơ đầy đủ / chỉnh sửa</a></p></div>
 <div class="detail-box"><h4>Toàn bộ vi phạm / hoạt động</h4>{% for e in summary.all_events %}<div class="history-item"><b>{{e.day}}</b> · {{e.event_type}} · <span class="points" style="background:{% if e.points > 0 %}#e8f7ef;color:#13764f{% elif e.points < 0 %}#fff0f1;color:#b83245{% else %}#edf1f7;color:#64748b{% endif %}">{{'+' if e.points > 0 else ''}}{{'%.1f'|format(e.points)}}</span>{% if e.subject or e.lesson %}<div class="muted">{{e.subject}} {{e.lesson}}</div>{% endif %}{% if e.note %}<div>{{e.note}}</div>{% endif %}</div>{% else %}<div class="muted">Chưa có ghi nhận.</div>{% endfor %}</div>
 <div class="detail-box"><h4>Lịch sử điểm danh</h4>{% for a in summary.attendance %}<div class="history-item"><b>{{a.day}}</b> · {{a.status}}{% if a.note %}<div>{{a.note}}</div>{% endif %}</div>{% else %}<div class="muted">Chưa có dữ liệu điểm danh.</div>{% endfor %}</div>
 </div></td></tr>
 {% else %}<tr><td colspan="9">Chưa có học sinh.</td></tr>{% endfor %}
 </tbody></table></div>
 <div class="savebar"><span style="font-size:13px;color:#53627a">Chọn trạng thái và tích mọi tình huống xảy ra; điểm cộng/trừ mặc định hiện cạnh từng mục. Mọi lựa chọn được lưu vào lịch sử.</span><button type="submit">Lưu ghi nhận cả lớp</button></div>
-</form></section><section><h2>Kế hoạch dạy học</h2><form method="post" action="/class/{{cl.id}}/plan"><input name="subject" placeholder="Môn học" required><input name="lesson" placeholder="Bài học" required><input type="date" name="day"><input name="period" placeholder="Tiết"><input name="note" placeholder="Ghi chú"><button>Lưu kế hoạch</button></form>{% for p in plans %}<p>{{p.day}} · {{p.subject}} · {{p.lesson}} · Tiết {{p.period}} — {{p.note}}</p>{% endfor %}</section><script>
+</form></section><section><h2>Kế hoạch dạy học</h2><form method="post" action="/class/{{cl.id}}/plan"><input name="subject" placeholder="Môn học" required><input name="lesson" placeholder="Bài học" required><input type="date" name="day"><input name="period" placeholder="Tiết"><input name="note" placeholder="Ghi chú"><button>Lưu kế hoạch</button></form>{% for p in plans %}<p>{{p.day}} · {{p.subject}} · {{p.lesson}} · Tiết {{p.period}} — {{p.note}}</p>{% endfor %}</section>
+
+<div id="seatDetail" class="seat-sheet" hidden>
+ <div class="seat-sheet-backdrop" onclick="closeSeatDetail()"></div>
+ <div class="seat-sheet-panel" role="dialog" aria-modal="true" aria-labelledby="seatDetailBody">
+  <button type="button" class="seat-sheet-close" onclick="closeSeatDetail()" aria-label="Đóng">×</button>
+  <div id="seatDetailBody"></div>
+ </div>
+</div>
+
+<script>
 function paintAttendance(id,value){
  const row=document.getElementById('student-row-'+id);
  if(!row) return;
@@ -310,14 +343,31 @@ STUDENTS["{{s.id}}"]={
  short:{{ short_name(s.name)|tojson }},
  team:{{ (s.team or '')|tojson }},
  gender:{{ (s.gender or '')|tojson }},
+ birth:{{ (s.birth_date or '')|tojson }},
+ phone:{{ (s.phone or '')|tojson }},
+ parent_name:{{ (s.parent_name or '')|tojson }},
+ parent_phone:{{ (s.parent_phone or '')|tojson }},
+ avg10:{{ (s.avg_grade_10 or '')|tojson }},
+ avg11:{{ (s.avg_grade_11 or '')|tojson }},
  points:{{ sm.total_points|float }},
  pos:{{ sm.pos_n }},
  neg:{{ sm.neg_n }},
- att:{{ (sm.today_status or '')|tojson }}
+ att:{{ (sm.today_status or '')|tojson }},
+ events:[
+ {% for e in sm.all_events[:24] %}
+ {day:{{e.day|tojson}},type:{{e.event_type|tojson}},points:{{ (e.points or 0)|float }},note:{{ (e.note or '')|tojson }},subject:{{ (e.subject or '')|tojson }},lesson:{{ (e.lesson or '')|tojson }}}{% if not loop.last %},{% endif %}
+ {% endfor %}
+ ],
+ att_hist:[
+ {% for a in sm.attendance[:12] %}
+ {day:{{a.day|tojson}},status:{{a.status|tojson}},note:{{ (a.note or '')|tojson }}}{% if not loop.last %},{% endif %}
+ {% endfor %}
+ ]
 };
 {% endfor %}
 let selectedSid=null;
 let dragSid=null;
+let detailSid=null;
 
 function teamClass(team){
  if(['1','2','3','4','5','6'].includes(String(team))) return 'team-'+team;
@@ -349,6 +399,8 @@ function seatIconsHtml(info){
  let h=genderBadge(info.gender)+pointsBadge(info.points);
  if(info.pos) h+='<span class="ico tot" title="Số lần cộng điểm">★'+info.pos+'</span>';
  if(info.neg) h+='<span class="ico vp" title="Số lần trừ điểm / vi phạm">!'+info.neg+'</span>';
+ if(info.avg10) h+='<span class="ico" style="background:#e0f2fe;color:#0369a1" title="TB lớp 10">10:'+info.avg10+'</span>';
+ if(info.avg11) h+='<span class="ico" style="background:#fef3c7;color:#b45309" title="TB lớp 11">11:'+info.avg11+'</span>';
  h+=attBadge(info.att).html;
  return h ? '<span class="seat-icons">'+h+'</span>' : '';
 }
@@ -367,11 +419,80 @@ function setHint(msg){
  const el=document.getElementById('seatHint');
  if(el) el.textContent=msg;
 }
+function esc(s){
+ return String(s==null?'':s).replace(/[&<>"']/g,c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+function fmtPts(p){
+ const n=Number(p)||0;
+ const t=(n>0?'+':'')+n.toFixed(1);
+ const bg=n>0?'#e8f7ef':(n<0?'#fff0f1':'#edf1f7');
+ const col=n>0?'#13764f':(n<0?'#b83245':'#64748b');
+ return '<span class="points" style="background:'+bg+';color:'+col+'">'+t+'</span>';
+}
+function closeSeatDetail(){
+ detailSid=null;
+ const el=document.getElementById('seatDetail');
+ if(el) el.hidden=true;
+}
+function openSeatDetail(sid){
+ const info=STUDENTS[sid];
+ if(!info) return;
+ detailSid=String(sid);
+ const team=document.getElementById('team_'+sid)?.value || info.team || '';
+ const rewards=(info.events||[]).filter(e=>(Number(e.points)||0)>0);
+ const viols=(info.events||[]).filter(e=>(Number(e.points)||0)<0);
+ const other=(info.events||[]).filter(e=>(Number(e.points)||0)===0);
+ let contact='';
+ if(info.parent_phone){
+  contact+='<a href="tel:'+esc(info.parent_phone)+'"><span>Gọi phụ huynh'+(info.parent_name?' · '+esc(info.parent_name):'')+'</span><b>'+esc(info.parent_phone)+'</b></a>';
+ } else {
+  contact+='<div class="muted" style="padding:8px 0">Chưa có SĐT phụ huynh'+(info.parent_name?' ('+esc(info.parent_name)+')':'')+'.</div>';
+ }
+ if(info.phone){
+  contact+='<a href="tel:'+esc(info.phone)+'" style="background:#f4f7fb;border-color:#d5e0ef"><span>Gọi học sinh</span><b>'+esc(info.phone)+'</b></a>';
+ }
+ const avgBits=[];
+ if(info.avg10) avgBits.push('<span class="ico" style="background:#e0f2fe;color:#0369a1">TB10 '+esc(info.avg10)+'</span>');
+ if(info.avg11) avgBits.push('<span class="ico" style="background:#fef3c7;color:#b45309">TB11 '+esc(info.avg11)+'</span>');
+ if(!avgBits.length) avgBits.push('<span class="muted">Chưa nhập TB lớp 10 / 11</span>');
+ function listEvents(arr, emptyMsg){
+  if(!arr.length) return '<div class="muted">'+emptyMsg+'</div>';
+  return arr.map(e=>{
+   let sub=[e.subject,e.lesson].filter(Boolean).join(' · ');
+   return '<div class="sd-item"><b>'+esc(e.day)+'</b> · '+esc(e.type)+' · '+fmtPts(e.points)
+    +(sub?'<div class="muted">'+esc(sub)+'</div>':'')
+    +(e.note?'<div>'+esc(e.note)+'</div>':'')+'</div>';
+  }).join('');
+ }
+ const body=document.getElementById('seatDetailBody');
+ body.innerHTML=
+  '<h3>'+esc(info.name)+'</h3>'
+  +'<p class="sd-meta">'+esc(info.code)+(team?' · Tổ '+esc(team):'')+(info.gender?' · '+esc(info.gender):'')+(info.birth?' · NS '+esc(info.birth):'')
+  +(info.att?' · Hôm nay: '+esc(info.att):'')+'</p>'
+  +'<div class="sd-stats">'+seatIconsHtml(info)+' '+avgBits.join(' ')+'</div>'
+  +'<div class="sd-contact">'+contact+'</div>'
+  +'<div class="sd-col"><h4>Điểm trung bình năm</h4>'
+  +'<div class="sd-item">Lớp 10: <b>'+(info.avg10?esc(info.avg10):'—')+'</b></div>'
+  +'<div class="sd-item">Lớp 11: <b>'+(info.avg11?esc(info.avg11):'—')+'</b></div></div>'
+  +'<div class="sd-col"><h4>Khen thưởng / cộng điểm ('+rewards.length+')</h4>'+listEvents(rewards,'Chưa có.')+'</div>'
+  +'<div class="sd-col"><h4>Vi phạm / trừ điểm ('+viols.length+')</h4>'+listEvents(viols,'Chưa có.')+'</div>'
+  +(other.length?'<div class="sd-col"><h4>Ghi nhận khác</h4>'+listEvents(other,'')+'</div>':'')
+  +'<div class="sd-col"><h4>Điểm danh gần đây</h4>'
+  +((info.att_hist&&info.att_hist.length)?info.att_hist.map(a=>'<div class="sd-item"><b>'+esc(a.day)+'</b> · '+esc(a.status)+(a.note?' — '+esc(a.note):'')+'</div>').join(''):'<div class="muted">Chưa có.</div>')
+  +'</div>'
+  +'<div class="sd-actions">'
+  +'<button type="button" class="btn-ghost" id="seatDetailSelect">Chọn để xếp chỗ</button>'
+  +'<a class="btn-ghost" href="/student/'+encodeURIComponent(sid)+'" style="display:inline-flex;align-items:center;padding:10px 12px;border-radius:10px;text-decoration:none;font-weight:700">Mở hồ sơ</a>'
+  +'</div>';
+ document.getElementById('seatDetail').hidden=false;
+ const sel=document.getElementById('seatDetailSelect');
+ if(sel) sel.onclick=()=>{ closeSeatDetail(); selectSid(sid); };
+}
 function clearSelection(){
  selectedSid=null;
  document.querySelectorAll('.pupil.selected,.seat.selected').forEach(el=>el.classList.remove('selected'));
  document.querySelectorAll('.seat.tap-target').forEach(el=>el.classList.remove('tap-target'));
- setHint('Chưa chọn học sinh — kéo hoặc chạm một tên để bắt đầu.');
+ setHint('Chạm ô học sinh để xem chi tiết · kéo để xếp chỗ · hoặc chọn tên rồi chạm ô trống.');
 }
 function refreshSeatVisual(seat){
  if(!seat || !seat.classList.contains('seat')) return;
@@ -516,7 +637,7 @@ function bindSeat(seat){
    placeAt(selectedSid, seat);
    return;
   }
-  if(seat.dataset.sid) selectSid(seat.dataset.sid);
+  if(seat.dataset.sid) openSeatDetail(seat.dataset.sid);
  });
 }
 

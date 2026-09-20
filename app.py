@@ -155,7 +155,7 @@ def init_db():
             c.execute("INSERT INTO app_settings(key,value) VALUES('edit_password_hash',?)",(digest,))
         # Migrate DB created by earlier versions without losing records.
         cols={r["name"] for r in c.execute("PRAGMA table_info(students)").fetchall()}
-        for name,typ in [("birth_date","TEXT DEFAULT ''"),("gender","TEXT DEFAULT ''"),("note","TEXT DEFAULT ''"),("phone","TEXT DEFAULT ''"),("parent_name","TEXT DEFAULT ''"),("parent_phone","TEXT DEFAULT ''"),("team","TEXT DEFAULT ''"),("seat_row","INTEGER"),("seat_col","INTEGER")]:
+        for name,typ in [("birth_date","TEXT DEFAULT ''"),("gender","TEXT DEFAULT ''"),("note","TEXT DEFAULT ''"),("phone","TEXT DEFAULT ''"),("parent_name","TEXT DEFAULT ''"),("parent_phone","TEXT DEFAULT ''"),("team","TEXT DEFAULT ''"),("seat_row","INTEGER"),("seat_col","INTEGER"),("avg_grade_10","TEXT DEFAULT ''"),("avg_grade_11","TEXT DEFAULT ''")]:
             if name not in cols: c.execute(f"ALTER TABLE students ADD COLUMN {name} {typ}")
         ccols={r["name"] for r in c.execute("PRAGMA table_info(classes)").fetchall()}
         for name,typ in [("layout_rows","INTEGER DEFAULT 6"),("layout_cols","INTEGER DEFAULT 7")]:
@@ -197,6 +197,19 @@ def parse_int_cell(value):
     if not m: return None
     try: return int(m.group(1))
     except ValueError: return None
+
+def normalize_avg_grade(value):
+    """Keep empty or a clean decimal string like 8.5 / 8,50."""
+    s=_cell(value).replace(",", ".")
+    if not s: return ""
+    m=re.search(r"-?\d+(?:\.\d+)?", s)
+    if not m: return s
+    try:
+        n=float(m.group(0))
+        if n == int(n): return str(int(n))
+        return f"{n:.2f}".rstrip("0").rstrip(".")
+    except ValueError:
+        return s
 
 def parse_team_marker(line):
     """Detect '% Tổ 1' or '\\section*{Tổ 2}' style markers."""
@@ -280,7 +293,7 @@ def parse_tex_students(tex_text):
 STUDENT_IMPORT_HEADERS = [
     "Mã HS", "Họ và tên", "Ngày sinh", "Giới tính",
     "Điện thoại HS", "Họ tên phụ huynh", "Điện thoại phụ huynh", "Ghi chú",
-    "Tổ", "Hàng", "Cột",
+    "Tổ", "Hàng", "Cột", "TB lớp 10", "TB lớp 11",
 ]
 
 def _cell(v):
@@ -288,9 +301,9 @@ def _cell(v):
     return str(v).strip()
 
 def _student_record(parts):
-    """Map columns: code, name, birth, gender, phone, parent, parent_phone, note, team, row, col."""
+    """Map columns: code, name, birth, gender, phone, parent, parent_phone, note, team, row, col, avg10, avg11."""
     parts=[_cell(x) for x in parts]
-    while len(parts)<11: parts.append("")
+    while len(parts)<13: parts.append("")
     code,name=parts[0],parts[1]
     if not code or not name: return None
     if name.lower() in ("họ và tên","ho va ten"): return None
@@ -299,6 +312,8 @@ def _student_record(parts):
         "phone":parts[4], "parent_name":parts[5], "parent_phone":parts[6], "note":parts[7],
         "team":normalize_team(parts[8]),
         "seat_row":parse_int_cell(parts[9]), "seat_col":parse_int_cell(parts[10]),
+        "avg_grade_10":normalize_avg_grade(parts[11]),
+        "avg_grade_11":normalize_avg_grade(parts[12]),
     }
 
 def parse_text_students(text):
@@ -347,6 +362,12 @@ def upsert_students(cid, records):
                 if s.get("phone") or s.get("parent_name") or s.get("parent_phone"):
                     c.execute("""UPDATE students SET phone=?,parent_name=?,parent_phone=? WHERE id=?""",
                               (s.get("phone",""),s.get("parent_name",""),s.get("parent_phone",""),old["id"]))
+                if s.get("avg_grade_10") or s.get("avg_grade_11"):
+                    sets=[]; vals=[]
+                    if s.get("avg_grade_10"): sets.append("avg_grade_10=?"); vals.append(s.get("avg_grade_10",""))
+                    if s.get("avg_grade_11"): sets.append("avg_grade_11=?"); vals.append(s.get("avg_grade_11",""))
+                    vals.append(old["id"])
+                    c.execute(f"UPDATE students SET {', '.join(sets)} WHERE id=?", vals)
                 if team or seat_row is not None or seat_col is not None:
                     # Only overwrite seating when import provides team and/or seat.
                     sets=[]; vals=[]
@@ -357,11 +378,12 @@ def upsert_students(cid, records):
                     c.execute(f"UPDATE students SET {', '.join(sets)} WHERE id=?", vals)
                 updated+=1
             else:
-                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col)
-                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                c.execute("""INSERT INTO students(class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col,avg_grade_10,avg_grade_11)
+                             VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                           (cid,s["student_code"],s["name"],s["birth_date"],s["gender"],s["note"],
                            s.get("phone",""),s.get("parent_name",""),s.get("parent_phone",""),
-                           team, seat_row, seat_col))
+                           team, seat_row, seat_col,
+                           s.get("avg_grade_10",""), s.get("avg_grade_11","")))
                 added+=1
     return added, updated
 
@@ -463,6 +485,7 @@ def _upsert_tex_into_class(class_name, tex_path):
         return 0, 0, created
     for s in records:
         s.setdefault("phone", ""); s.setdefault("parent_name", ""); s.setdefault("parent_phone", "")
+        s.setdefault("avg_grade_10", ""); s.setdefault("avg_grade_11", "")
     result = upsert_students(cid, records)
     added = result[0] if result else 0
     updated = result[1] if result else 0
@@ -558,12 +581,13 @@ def import_snapshot(snap):
             )
         for row in snap.get("students") or []:
             c.execute(
-                """INSERT INTO students(id,class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col)
-                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO students(id,class_id,student_code,name,birth_date,gender,note,phone,parent_name,parent_phone,team,seat_row,seat_col,avg_grade_10,avg_grade_11)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (row.get("id"), row.get("class_id"), row.get("student_code"), row.get("name"),
                  row.get("birth_date",""), row.get("gender",""), row.get("note",""), row.get("phone",""),
                  row.get("parent_name",""), row.get("parent_phone",""), row.get("team",""),
-                 row.get("seat_row"), row.get("seat_col")),
+                 row.get("seat_row"), row.get("seat_col"),
+                 row.get("avg_grade_10",""), row.get("avg_grade_11","")),
             )
         for row in snap.get("attendance") or []:
             c.execute(
@@ -856,7 +880,7 @@ def students_template(cid):
     ws=wb.active
     ws.title="Danh sách"
     ws.append(STUDENT_IMPORT_HEADERS)
-    ws.append(["HS001","NGUYỄN VĂN A","10/04/2011","Nam","","","","","1","1","1"])
+    ws.append(["HS001","NGUYỄN VĂN A","10/04/2011","Nam","","","","","1","1","1","8.2","7.9"])
     buf=BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -982,6 +1006,7 @@ def import_tex(cid):
     # LaTeX rows may omit phone/parent fields.
     for s in parsed:
         s.setdefault("phone",""); s.setdefault("parent_name",""); s.setdefault("parent_phone","")
+        s.setdefault("avg_grade_10",""); s.setdefault("avg_grade_11","")
     result=upsert_students(cid, parsed)
     if result is None: return "Không tìm thấy lớp",404
     added,updated=result
@@ -1010,12 +1035,14 @@ def edit_student(sid):
     team=normalize_team(request.form.get("team",""))
     seat_row=parse_int_cell(request.form.get("seat_row",""))
     seat_col=parse_int_cell(request.form.get("seat_col",""))
+    avg10=normalize_avg_grade(request.form.get("avg_grade_10",""))
+    avg11=normalize_avg_grade(request.form.get("avg_grade_11",""))
     with db() as c:
         row=c.execute("SELECT class_id FROM students WHERE id=?",(sid,)).fetchone()
         if not row: return "Không tìm thấy học sinh",404
         try:
-            c.execute("""UPDATE students SET student_code=?,name=?,birth_date=?,gender=?,note=?,phone=?,parent_name=?,parent_phone=?,team=?,seat_row=?,seat_col=? WHERE id=?""",
-             (code,name,request.form.get("birth_date",""),request.form.get("gender",""),request.form.get("note",""),request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip(),team,seat_row,seat_col,sid))
+            c.execute("""UPDATE students SET student_code=?,name=?,birth_date=?,gender=?,note=?,phone=?,parent_name=?,parent_phone=?,team=?,seat_row=?,seat_col=?,avg_grade_10=?,avg_grade_11=? WHERE id=?""",
+             (code,name,request.form.get("birth_date",""),request.form.get("gender",""),request.form.get("note",""),request.form.get("phone","").strip(),request.form.get("parent_name","").strip(),request.form.get("parent_phone","").strip(),team,seat_row,seat_col,avg10,avg11,sid))
             flash("Đã cập nhật hồ sơ. Lịch sử vẫn được giữ nguyên.")
         except sqlite3.IntegrityError: flash("Mã học sinh bị trùng trong lớp.")
     return redirect(url_for("student_page",sid=sid))

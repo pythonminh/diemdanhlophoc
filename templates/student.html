@@ -55,6 +55,8 @@ textarea{resize:vertical;min-height:42px}
 <div class="field"><label>Điện thoại học sinh</label><input name="phone" value="{{s.phone}}" placeholder="Số điện thoại"></div>
 <div class="field wide"><label>Họ tên phụ huynh</label><input name="parent_name" value="{{s.parent_name}}" placeholder="Họ và tên phụ huynh"></div>
 <div class="field"><label>Điện thoại phụ huynh</label><input name="parent_phone" value="{{s.parent_phone}}" placeholder="Số điện thoại"></div>
+<div class="field"><label>TB cả năm lớp 10</label><input name="avg_grade_10" value="{{s.avg_grade_10 or ''}}" placeholder="VD: 8.2" inputmode="decimal"></div>
+<div class="field"><label>TB cả năm lớp 11</label><input name="avg_grade_11" value="{{s.avg_grade_11 or ''}}" placeholder="VD: 7.9" inputmode="decimal"></div>
 <div class="field"><label>Tổ</label><input name="team" value="{{s.team or ''}}" placeholder="VD: 1"></div>
 <div class="field"><label>Hàng (chỗ ngồi)</label><input type="number" name="seat_row" value="{{s.seat_row or ''}}" min="1" max="20" placeholder="Gần bảng = 1"></div>
 <div class="field"><label>Cột (chỗ ngồi)</label><input type="number" name="seat_col" value="{{s.seat_col or ''}}" min="1" max="20" placeholder="Trái → phải"></div>
