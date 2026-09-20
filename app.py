@@ -443,28 +443,76 @@ def _pick_class_tex_files(folder_path):
         os.path.join(folder_path, so) if so else None,
     )
 
+def _ensure_class(class_name):
+    """Create class row if missing. Returns (class_id, created_bool)."""
+    with db() as c:
+        row = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()
+        if row:
+            return row["id"], False
+        c.execute("INSERT INTO classes(name) VALUES(?)", (class_name,))
+        cid = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()["id"]
+        return cid, True
+
 def _upsert_tex_into_class(class_name, tex_path):
     content = _read_tex(tex_path)
     if not content.strip():
         return 0, 0, False
     records = parse_tex_students(content)
+    cid, created = _ensure_class(class_name)
     if not records:
-        return 0, 0, False
-    created = False
-    with db() as c:
-        row = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()
-        if row:
-            cid = row["id"]
-        else:
-            c.execute("INSERT INTO classes(name) VALUES(?)", (class_name,))
-            cid = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()["id"]
-            created = True
+        return 0, 0, created
     for s in records:
         s.setdefault("phone", ""); s.setdefault("parent_name", ""); s.setdefault("parent_phone", "")
     result = upsert_students(cid, records)
     added = result[0] if result else 0
     updated = result[1] if result else 0
     return added, updated, created
+
+def sync_classes_from_danh_sach(only_if_empty=False):
+    """Sync from danh-sach/<Lớp>/ — always create a class per folder (even if tex còn trống)."""
+    with db() as c:
+        n = c.execute("SELECT COUNT(*) FROM classes").fetchone()[0]
+        if only_if_empty and n > 0:
+            return 0, 0, 0
+    if not os.path.isdir(DANH_SACH_DIR):
+        return 0, 0, 0
+    created = added = updated = 0
+
+    for entry in sorted(os.listdir(DANH_SACH_DIR)):
+        folder = os.path.join(DANH_SACH_DIR, entry)
+        if not os.path.isdir(folder):
+            continue
+        if entry.startswith(".") or entry.lower() in ("mau", "_templates"):
+            continue
+        class_name = class_name_from_folder(entry)
+        if not class_name:
+            continue
+        # Always register the class from folder name (empty roster is OK).
+        _, was_new = _ensure_class(class_name)
+        if was_new:
+            created += 1
+        danh_path, so_path = _pick_class_tex_files(folder)
+        for path in (danh_path, so_path):
+            if not path:
+                continue
+            a, u, _ = _upsert_tex_into_class(class_name, path)
+            added += a
+            updated += u
+
+    for fn in sorted(os.listdir(DANH_SACH_DIR)):
+        path = os.path.join(DANH_SACH_DIR, fn)
+        if not os.path.isfile(path) or not fn.lower().endswith(".tex"):
+            continue
+        if fn.lower().startswith("mau_") or fn.lower().startswith("so_do"):
+            continue
+        class_name = os.path.splitext(fn)[0].strip()
+        _, was_new = _ensure_class(class_name)
+        if was_new:
+            created += 1
+        a, u, _ = _upsert_tex_into_class(class_name, path)
+        added += a
+        updated += u
+    return created, added, updated
 
 def _rows(c, sql, args=()):
     return [dict(r) for r in c.execute(sql, args).fetchall()]
@@ -609,72 +657,27 @@ def fetch_snapshot_from_github():
         return json.loads(resp.read().decode("utf-8"))
 
 def restore_data_if_empty():
-    """Prefer full snapshot (GitHub/local), else danh-sach/*.tex roster only."""
+    """Restore snapshot if DB empty, then always merge danh-sach/<lớp>/ folders."""
     with db() as c:
-        if c.execute("SELECT COUNT(*) FROM classes").fetchone()[0] > 0:
-            return "keep"
-    # 1) local file shipped with deploy
-    snap = load_snapshot_file()
-    if snap:
-        import_snapshot(snap)
-        return "local-snapshot"
-    # 2) pull from GitHub
-    try:
-        snap = fetch_snapshot_from_github()
+        empty = c.execute("SELECT COUNT(*) FROM classes").fetchone()[0] == 0
+    source = "keep"
+    if empty:
+        snap = load_snapshot_file()
         if snap:
             import_snapshot(snap)
-            save_snapshot_local(snap)
-            return "github-snapshot"
-    except Exception:
-        pass
-    # 3) roster-only from tex
-    sync_classes_from_danh_sach(only_if_empty=True)
-    return "tex"
-
-def sync_classes_from_danh_sach(only_if_empty=False):
-    """Sync from danh-sach/<Lớp>/{danh_sach.tex, so_do.tex} (legacy flat *.tex still supported)."""
-    with db() as c:
-        n = c.execute("SELECT COUNT(*) FROM classes").fetchone()[0]
-        if only_if_empty and n > 0:
-            return 0, 0, 0
-    if not os.path.isdir(DANH_SACH_DIR):
-        return 0, 0, 0
-    created = added = updated = 0
-
-    for entry in sorted(os.listdir(DANH_SACH_DIR)):
-        folder = os.path.join(DANH_SACH_DIR, entry)
-        if not os.path.isdir(folder):
-            continue
-        if entry.startswith(".") or entry.lower() in ("mau", "_templates"):
-            continue
-        class_name = class_name_from_folder(entry)
-        if not class_name:
-            continue
-        danh_path, so_path = _pick_class_tex_files(folder)
-        # Roster first, then seating (team/seat columns).
-        for path in (danh_path, so_path):
-            if not path:
-                continue
-            a, u, was_new = _upsert_tex_into_class(class_name, path)
-            added += a
-            updated += u
-            if was_new:
-                created += 1
-
-    # Legacy: danh-sach/10T1.tex at root of danh-sach/
-    for fn in sorted(os.listdir(DANH_SACH_DIR)):
-        path = os.path.join(DANH_SACH_DIR, fn)
-        if not os.path.isfile(path) or not fn.lower().endswith(".tex"):
-            continue
-        if fn.lower().startswith("mau_") or fn.lower().startswith("so_do"):
-            continue
-        class_name = os.path.splitext(fn)[0].strip()
-        a, u, was_new = _upsert_tex_into_class(class_name, path)
-        added += a
-        updated += u
-        if was_new:
-            created += 1
-    return created, added, updated
+            source = "local-snapshot"
+        else:
+            try:
+                snap = fetch_snapshot_from_github()
+                if snap:
+                    import_snapshot(snap)
+                    save_snapshot_local(snap)
+                    source = "github-snapshot"
+            except Exception:
+                source = "tex"
+    # Always register every class folder (even empty tex) so danh sách lớp đủ.
+    sync_classes_from_danh_sach(only_if_empty=False)
+    return source
 
 # Empty DB after Render wipe → restore from GitHub/local snapshot, else tex roster.
 restore_data_if_empty()
@@ -721,7 +724,12 @@ def snapshot_load_github():
         snap = fetch_snapshot_from_github()
         n = import_snapshot(snap)
         save_snapshot_local(snap)
-        flash(f"Đã mở từ GitHub: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện.")
+        # Snapshot may be old (only 10T1) — merge in all class folders from repo.
+        c2, a2, u2 = sync_classes_from_danh_sach(only_if_empty=False)
+        flash(
+            f"Đã mở từ GitHub: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện. "
+            f"Đã bổ sung thư mục lớp: +{c2} lớp, +{a2} HS, cập nhật {u2}."
+        )
     except Exception as e:
         flash(f"Không mở được từ GitHub: {e}")
     return redirect(url_for("index"))
@@ -736,7 +744,11 @@ def snapshot_import_upload():
         snap = json.loads(upload.read().decode("utf-8"))
         n = import_snapshot(snap)
         save_snapshot_local(snap)
-        flash(f"Đã nhập snapshot: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện.")
+        c2, a2, u2 = sync_classes_from_danh_sach(only_if_empty=False)
+        flash(
+            f"Đã nhập snapshot: {n[0]} lớp, {n[1]} HS, {n[2]} điểm danh, {n[3]} sự kiện. "
+            f"Bổ sung thư mục: +{c2} lớp, +{a2} HS."
+        )
     except Exception as e:
         flash(f"File snapshot không hợp lệ: {e}")
     return redirect(url_for("index"))
