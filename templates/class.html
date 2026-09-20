@@ -27,16 +27,23 @@ tr.att-late td{background:#fff8e8!important}
 .savebar{position:sticky;bottom:0;background:#eef3ff;border:1px solid #cad7ff;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:8}
 .board{background:#243552;color:#fff;text-align:center;padding:8px 10px;border-radius:8px;font-weight:700;letter-spacing:.04em;margin:0 0 10px}
 .seat-grid{display:grid;gap:6px;overflow:auto;padding-bottom:4px}
-.seat{min-height:54px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:center;gap:2px}
+.seat{min-height:54px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
 .seat.filled{border-style:solid;background:#fff;box-shadow:0 1px 3px #15284a0a}
-.seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere}
-.seat .meta{color:#718096;font-size:10px}
+.seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere;pointer-events:none}
+.seat .meta{color:#718096;font-size:10px;pointer-events:none}
+.seat.drag-over,.seat.tap-target{border-color:#315de8;background:#eef3ff;box-shadow:inset 0 0 0 2px #315de866}
 .seat.team-1{border-left:4px solid #315de8}.seat.team-2{border-left:4px solid #16a36a}.seat.team-3{border-left:4px solid #d97706}
 .seat.team-4{border-left:4px solid #db2777}.seat.team-5{border-left:4px solid #7c3aed}.seat.team-6{border-left:4px solid #0891b2}
 .seat.team-other{border-left:4px solid #64748b}
 .seat-legend{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px;font-size:12px;color:#53627a}
 .seat-legend span{display:inline-flex;align-items:center;gap:5px}
 .seat-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.pool{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:44px;padding:8px;border:1px dashed #c9d4e6;border-radius:10px;background:#f8fafc}
+.pool.drag-over{border-color:#315de8;background:#eef3ff}
+.pupil{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #d0daf0;border-radius:999px;background:#fff;font-size:12px;font-weight:650;color:#1e3a6e;cursor:grab;touch-action:none;box-shadow:0 1px 2px #15284a0a}
+.pupil:active{cursor:grabbing}.pupil.selected{outline:2px solid #315de8;background:#eef3ff}
+.pupil .code{color:#718096;font-weight:600;font-size:11px}
+.seat-hint{font-size:12px;color:#53627a;margin:0 0 8px}
 .seat-assign{width:100%;overflow:auto;margin-top:10px}
 .seat-assign table{min-width:100%;width:max-content}
 .seat-assign th,.seat-assign td{position:static!important;box-shadow:none!important;min-width:auto!important;white-space:nowrap}
@@ -101,8 +108,13 @@ tr.att-late td{background:#fff8e8!important}
 </details></section>
 
 <section id="so-do-lop"><h2>Sơ đồ lớp</h2>
-<p class="muted">Lưới chỗ ngồi theo hàng × cột. Màu viền trái theo tổ. Học sinh chưa gán chỗ hiện dưới lưới.</p>
-<form method="post" action="/class/{{cl.id}}/seating">
+<p class="muted">Kéo thả tên vào ô chỗ ngồi (máy tính), hoặc chạm chọn tên rồi chạm ô (điện thoại). Bấm <b>Lưu sơ đồ</b> để ghi vào server.</p>
+<form method="post" action="/class/{{cl.id}}/seating" id="seatingForm">
+{% for s in students %}
+<input type="hidden" name="team_{{s.id}}" id="team_{{s.id}}" value="{{s.team or ''}}">
+<input type="hidden" name="seat_row_{{s.id}}" id="seat_row_{{s.id}}" value="{{s.seat_row or ''}}">
+<input type="hidden" name="seat_col_{{s.id}}" id="seat_col_{{s.id}}" value="{{s.seat_col or ''}}">
+{% endfor %}
 <div class="layout-fields">
 <label>Số hàng<br><input type="number" name="layout_rows" min="1" max="20" value="{{layout_rows}}" style="width:90px"></label>
 <label>Số cột<br><input type="number" name="layout_cols" min="1" max="20" value="{{layout_cols}}" style="width:90px"></label>
@@ -112,37 +124,43 @@ tr.att-late td{background:#fff8e8!important}
 <span><i style="background:#315de8"></i>Tổ 1</span><span><i style="background:#16a36a"></i>Tổ 2</span><span><i style="background:#d97706"></i>Tổ 3</span>
 <span><i style="background:#db2777"></i>Tổ 4</span><span><i style="background:#7c3aed"></i>Tổ 5</span><span><i style="background:#0891b2"></i>Tổ 6</span>
 </div>
-<div class="seat-grid" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
+<p class="seat-hint" id="seatHint">Chưa chọn học sinh — kéo hoặc chạm một tên để bắt đầu.</p>
+<div class="seat-grid" id="seatGrid" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
 {% for r in range(1, layout_rows+1) %}{% for c in range(1, layout_cols+1) %}
 {% set st = seat_map.get((r,c)) %}
 {% if st %}
-{% set tc = st.team if st.team in ['1','2','3','4','5','6'] else 'other' %}
-<a class="seat filled team-{{tc}}" href="/student/{{st.id}}" title="{{st.name}} · {{st.student_code}}">
+{% set tc = st.team if st.team in ['1','2','3','4','5','6'] else ('other' if st.team else '') %}
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}}">
 <span class="sn">{{ short_name(st.name) }}</span>
 <span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
-</a>
+</div>
 {% else %}
-<div class="seat"><span class="meta">H{{r}}-C{{c}}</span></div>
+<div class="seat" data-row="{{r}}" data-col="{{c}}" data-sid=""><span class="meta">H{{r}}-C{{c}}</span></div>
 {% endif %}
 {% endfor %}{% endfor %}
 </div>
-{% if unseated %}
-<p class="muted" style="margin-top:12px">Chưa xếp chỗ ({{unseated|length}}): {% for s in unseated %}<a href="/student/{{s.id}}">{{s.name}}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+<p class="muted" style="margin-top:12px">Chưa xếp chỗ (<span id="poolCount">0</span>) — kéo về đây để bỏ chỗ:</p>
+<div class="pool" id="seatPool" aria-label="Học sinh chưa xếp chỗ">
+{% for s in students %}
+{% if not s.seat_row or not s.seat_col %}
+<span class="pupil" draggable="true" data-sid="{{s.id}}" data-code="{{s.student_code}}" data-name="{{s.name}}" data-short="{{ short_name(s.name) }}" data-team="{{s.team or ''}}"><span>{{ short_name(s.name) }}</span><span class="code">{{s.student_code}}</span></span>
 {% endif %}
-<details style="margin-top:12px"><summary>Gán tổ / hàng / cột cho từng học sinh</summary>
-<div class="seat-assign"><table><thead><tr><th>Mã</th><th>Họ tên</th><th>Tổ</th><th>Hàng</th><th>Cột</th><th>Xóa chỗ</th></tr></thead><tbody>
+{% endfor %}
+</div>
+<details style="margin-top:12px"><summary>Chỉnh tổ thủ công (tuỳ chọn)</summary>
+<div class="seat-assign"><table><thead><tr><th>Mã</th><th>Họ tên</th><th>Tổ</th></tr></thead><tbody>
 {% for s in students %}
 <tr>
 <td>{{s.student_code}}</td><td>{{s.name}}</td>
-<td><input name="team_{{s.id}}" value="{{s.team or ''}}" placeholder="1" style="width:56px"></td>
-<td><input type="number" name="seat_row_{{s.id}}" value="{{s.seat_row or ''}}" min="1" max="{{layout_rows}}" style="width:70px"></td>
-<td><input type="number" name="seat_col_{{s.id}}" value="{{s.seat_col or ''}}" min="1" max="{{layout_cols}}" style="width:70px"></td>
-<td><label style="font-size:12px"><input type="checkbox" name="clear_seat_{{s.id}}" value="1"> Bỏ chỗ</label></td>
+<td><input class="team-edit" data-sid="{{s.id}}" type="number" min="1" max="20" value="{{s.team or ''}}" style="width:56px"></td>
 </tr>
 {% endfor %}
 </tbody></table></div>
 </details>
-<p style="margin-top:12px"><button type="submit">Lưu sơ đồ &amp; tổ/chỗ</button></p>
+<p style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+<button type="submit">Lưu sơ đồ &amp; tổ/chỗ</button>
+<button type="button" id="clearSelectionBtn" style="background:#64748b">Bỏ chọn</button>
+</p>
 </form></section>
 
 <section><h2>Thông tin lớp / GVCN</h2><form method="post" action="/class/{{cl.id}}/settings"><input name="school_year" placeholder="Năm học" value="{{cl.school_year}}"><input name="homeroom_teacher" placeholder="Họ tên GVCN" value="{{cl.homeroom_teacher}}"><input name="teacher_phone" placeholder="Điện thoại GVCN" value="{{cl.teacher_phone}}"><button>Lưu</button></form></section><section><h2>Thêm học sinh thủ công</h2><form method="post" action="/class/{{cl.id}}/student/add"><input name="student_code" placeholder="Mã học sinh" required><input name="name" placeholder="Họ và tên" required><input type="date" name="birth_date"><input name="gender" placeholder="Giới tính"><input name="phone" placeholder="Điện thoại HS"><input name="parent_name" placeholder="Họ tên phụ huynh"><input name="parent_phone" placeholder="Điện thoại phụ huynh"><button>Thêm học sinh</button></form></section><section><h2>Danh sách học sinh ({{students|length}})</h2>
@@ -189,6 +207,7 @@ tr.att-late td{background:#fff8e8!important}
 </form></section><section><h2>Kế hoạch dạy học</h2><form method="post" action="/class/{{cl.id}}/plan"><input name="subject" placeholder="Môn học" required><input name="lesson" placeholder="Bài học" required><input type="date" name="day"><input name="period" placeholder="Tiết"><input name="note" placeholder="Ghi chú"><button>Lưu kế hoạch</button></form>{% for p in plans %}<p>{{p.day}} · {{p.subject}} · {{p.lesson}} · Tiết {{p.period}} — {{p.note}}</p>{% endfor %}</section><script>
 function paintAttendance(id,value){
  const row=document.getElementById('student-row-'+id);
+ if(!row) return;
  row.classList.remove('att-present','att-absent','att-late');
  if(value==='Có mặt') row.classList.add('att-present');
  else if(value==='Vắng có phép'||value==='Vắng không phép') row.classList.add('att-absent');
@@ -201,4 +220,196 @@ function toggleDetail(id,btn){
  btn.setAttribute('aria-expanded',String(open));
  btn.textContent=btn.textContent.replace(open?'▾':'▴',open?'▴':'▾');
 }
+
+const STUDENTS={};
+{% for s in students %}
+STUDENTS["{{s.id}}"]={code:{{s.student_code|tojson}},name:{{s.name|tojson}},short:{{ short_name(s.name)|tojson }},team:{{ (s.team or '')|tojson }}};
+{% endfor %}
+let selectedSid=null;
+let dragSid=null;
+
+function teamClass(team){
+ if(['1','2','3','4','5','6'].includes(String(team))) return 'team-'+team;
+ if(team) return 'team-other';
+ return '';
+}
+function setInputs(sid,row,col){
+ const r=document.getElementById('seat_row_'+sid);
+ const c=document.getElementById('seat_col_'+sid);
+ if(r) r.value = row==null ? '' : row;
+ if(c) c.value = col==null ? '' : col;
+}
+function updatePoolCount(){
+ const n=document.querySelectorAll('#seatPool .pupil').length;
+ const el=document.getElementById('poolCount');
+ if(el) el.textContent=n;
+}
+function setHint(msg){
+ const el=document.getElementById('seatHint');
+ if(el) el.textContent=msg;
+}
+function clearSelection(){
+ selectedSid=null;
+ document.querySelectorAll('.pupil.selected,.seat.selected').forEach(el=>el.classList.remove('selected'));
+ document.querySelectorAll('.seat.tap-target').forEach(el=>el.classList.remove('tap-target'));
+ setHint('Chưa chọn học sinh — kéo hoặc chạm một tên để bắt đầu.');
+}
+function refreshSeatVisual(seat){
+ if(!seat || !seat.classList.contains('seat')) return;
+ const sid=seat.dataset.sid;
+ seat.className='seat';
+ if(!sid){
+  seat.removeAttribute('draggable');
+  seat.innerHTML='<span class="meta">H'+seat.dataset.row+'-C'+seat.dataset.col+'</span>';
+  return;
+ }
+ const info=STUDENTS[sid]||{};
+ const team=document.getElementById('team_'+sid)?.value || info.team || '';
+ seat.dataset.team=team;
+ seat.classList.add('filled');
+ const tc=teamClass(team); if(tc) seat.classList.add(tc);
+ seat.draggable=true;
+ seat.title=(info.name||'')+' · '+(info.code||'');
+ seat.innerHTML='<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>';
+}
+window.refreshSeatVisual=refreshSeatVisual;
+
+function findSeatBySid(sid){
+ return document.querySelector('#seatGrid .seat[data-sid="'+sid+'"]');
+}
+function makePupil(sid){
+ const info=STUDENTS[sid]||{};
+ const team=document.getElementById('team_'+sid)?.value || info.team || '';
+ const el=document.createElement('span');
+ el.className='pupil';
+ el.draggable=true;
+ el.dataset.sid=sid;
+ el.dataset.code=info.code||'';
+ el.dataset.name=info.name||'';
+ el.dataset.short=info.short||'?';
+ el.dataset.team=team;
+ el.innerHTML='<span>'+(info.short||'?')+'</span><span class="code">'+(info.code||'')+'</span>';
+ bindPupil(el);
+ return el;
+}
+function clearSeatEl(seat){
+ const sid=seat.dataset.sid;
+ if(!sid) return null;
+ seat.dataset.sid='';
+ refreshSeatVisual(seat);
+ return sid;
+}
+function occupySeat(seat, sid){
+ seat.dataset.sid=String(sid);
+ setInputs(sid, seat.dataset.row, seat.dataset.col);
+ refreshSeatVisual(seat);
+ const poolChip=document.querySelector('#seatPool .pupil[data-sid="'+sid+'"]');
+ if(poolChip) poolChip.remove();
+ updatePoolCount();
+}
+function unseat(sid){
+ const seat=findSeatBySid(sid);
+ if(seat) clearSeatEl(seat);
+ setInputs(sid, null, null);
+ if(!document.querySelector('#seatPool .pupil[data-sid="'+sid+'"]')){
+  document.getElementById('seatPool').appendChild(makePupil(sid));
+ }
+ updatePoolCount();
+}
+function placeAt(sid, seat){
+ if(!sid || !seat) return;
+ const targetSid=seat.dataset.sid;
+ const fromSeat=findSeatBySid(sid);
+ if(targetSid && String(targetSid)===String(sid)){ clearSelection(); return; }
+ if(targetSid){
+  // swap
+  if(fromSeat){
+   occupySeat(fromSeat, targetSid);
+  } else {
+   unseat(targetSid);
+  }
+ }
+ if(fromSeat && fromSeat!==seat){
+  clearSeatEl(fromSeat);
+ }
+ occupySeat(seat, sid);
+ clearSelection();
+ setHint('Đã xếp chỗ — nhớ bấm «Lưu sơ đồ» để ghi nhận.');
+}
+function selectSid(sid){
+ if(selectedSid===String(sid)){ clearSelection(); return; }
+ clearSelection();
+ selectedSid=String(sid);
+ document.querySelectorAll('.pupil[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(el=>el.classList.add('selected'));
+ document.querySelectorAll('#seatGrid .seat').forEach(el=>el.classList.add('tap-target'));
+ const info=STUDENTS[sid]||{};
+ setHint('Đã chọn '+ (info.name||sid) +' — chạm một ô chỗ ngồi (hoặc chạm lại để bỏ chọn). Kéo về vùng «Chưa xếp chỗ» để bỏ chỗ.');
+}
+
+function bindPupil(el){
+ el.addEventListener('dragstart', e=>{
+  dragSid=el.dataset.sid;
+  e.dataTransfer.setData('text/plain', dragSid);
+  e.dataTransfer.effectAllowed='move';
+ });
+ el.addEventListener('click', e=>{
+  e.preventDefault();
+  selectSid(el.dataset.sid);
+ });
+}
+function bindSeat(seat){
+ seat.addEventListener('dragstart', e=>{
+  if(!seat.dataset.sid){ e.preventDefault(); return; }
+  dragSid=seat.dataset.sid;
+  e.dataTransfer.setData('text/plain', dragSid);
+  e.dataTransfer.effectAllowed='move';
+ });
+ seat.addEventListener('dragover', e=>{ e.preventDefault(); seat.classList.add('drag-over'); });
+ seat.addEventListener('dragleave', ()=> seat.classList.remove('drag-over'));
+ seat.addEventListener('drop', e=>{
+  e.preventDefault();
+  seat.classList.remove('drag-over');
+  const sid=e.dataTransfer.getData('text/plain') || dragSid;
+  placeAt(sid, seat);
+  dragSid=null;
+ });
+ seat.addEventListener('click', e=>{
+  e.preventDefault();
+  if(selectedSid){
+   placeAt(selectedSid, seat);
+   return;
+  }
+  if(seat.dataset.sid) selectSid(seat.dataset.sid);
+ });
+}
+
+(function initSeating(){
+ const grid=document.getElementById('seatGrid');
+ const pool=document.getElementById('seatPool');
+ if(!grid || !pool) return;
+ grid.querySelectorAll('.seat').forEach(bindSeat);
+ pool.querySelectorAll('.pupil').forEach(bindPupil);
+ pool.addEventListener('dragover', e=>{ e.preventDefault(); pool.classList.add('drag-over'); });
+ pool.addEventListener('dragleave', ()=> pool.classList.remove('drag-over'));
+ pool.addEventListener('drop', e=>{
+  e.preventDefault();
+  pool.classList.remove('drag-over');
+  const sid=e.dataTransfer.getData('text/plain') || dragSid;
+  if(sid){ unseat(sid); clearSelection(); setHint('Đã bỏ chỗ — nhớ bấm «Lưu sơ đồ».'); }
+  dragSid=null;
+ });
+ const btn=document.getElementById('clearSelectionBtn');
+ if(btn) btn.addEventListener('click', clearSelection);
+ document.querySelectorAll('.team-edit').forEach(inp=>{
+  inp.addEventListener('input', ()=>{
+   const sid=inp.dataset.sid;
+   const hid=document.getElementById('team_'+sid);
+   if(hid) hid.value=inp.value;
+   if(STUDENTS[sid]) STUDENTS[sid].team=inp.value;
+   const seat=findSeatBySid(sid);
+   if(seat) refreshSeatVisual(seat);
+  });
+ });
+ updatePoolCount();
+})();
 </script></body></html>
