@@ -26,6 +26,9 @@ tr.att-late td{background:#fff8e8!important}
 .quick-head input{margin:3px 0 0}
 .savebar{position:sticky;bottom:0;background:#eef3ff;border:1px solid #cad7ff;border-radius:10px;padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:8}
 .board{background:#243552;color:#fff;text-align:center;padding:8px 10px;border-radius:8px;font-weight:700;letter-spacing:.04em;margin:0 0 10px}
+.board.bottom{margin:10px 0 0}
+.view-label{font-size:13px;font-weight:750;color:#334155;margin:14px 0 6px}
+.view-label span{font-weight:500;color:#64748b}
 .seat-grid{display:grid;gap:6px;overflow:auto;padding-bottom:4px}
 .seat{min-height:54px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:center;gap:2px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
 .seat.filled{border-style:solid;background:#fff;box-shadow:0 1px 3px #15284a0a}
@@ -119,6 +122,7 @@ tr.att-late td{background:#fff8e8!important}
 <label>Số hàng<br><input type="number" name="layout_rows" min="1" max="20" value="{{layout_rows}}" style="width:90px"></label>
 <label>Số cột<br><input type="number" name="layout_cols" min="1" max="20" value="{{layout_cols}}" style="width:90px"></label>
 </div>
+<div class="view-label">Nhìn từ bảng vào lớp <span>(hàng 1 gần bảng, cột 1 bên trái học sinh)</span></div>
 <div class="board">BẢNG GIÁO VIÊN (hàng 1 gần đây)</div>
 <div class="seat-legend">
 <span><i style="background:#315de8"></i>Tổ 1</span><span><i style="background:#16a36a"></i>Tổ 2</span><span><i style="background:#d97706"></i>Tổ 3</span>
@@ -139,6 +143,24 @@ tr.att-late td{background:#fff8e8!important}
 {% endif %}
 {% endfor %}{% endfor %}
 </div>
+
+<div class="view-label">Góc nhìn giáo viên — nhìn xuống lớp <span>(đảo hàng &amp; cột: trái của GV = phải của HS)</span></div>
+<div class="seat-grid" id="seatGridTeacher" style="grid-template-columns:repeat({{layout_cols}},minmax(72px,1fr))">
+{% for r in range(layout_rows, 0, -1) %}{% for c in range(layout_cols, 0, -1) %}
+{% set st = seat_map.get((r,c)) %}
+{% if st %}
+{% set tc = st.team if st.team in ['1','2','3','4','5','6'] else ('other' if st.team else '') %}
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}}">
+<span class="sn">{{ short_name(st.name) }}</span>
+<span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+</div>
+{% else %}
+<div class="seat" data-row="{{r}}" data-col="{{c}}" data-sid=""><span class="meta">H{{r}}-C{{c}}</span></div>
+{% endif %}
+{% endfor %}{% endfor %}
+</div>
+<div class="board bottom">BẠN ĐỨNG ĐÂY · BẢNG / BỤC GV (hàng 1 sát bạn)</div>
+
 <p class="muted" style="margin-top:12px">Chưa xếp chỗ (<span id="poolCount">0</span>) — kéo về đây để bỏ chỗ:</p>
 <div class="pool" id="seatPool" aria-label="Học sinh chưa xếp chỗ">
 {% for s in students %}
@@ -275,7 +297,10 @@ function refreshSeatVisual(seat){
 window.refreshSeatVisual=refreshSeatVisual;
 
 function findSeatBySid(sid){
- return document.querySelector('#seatGrid .seat[data-sid="'+sid+'"]');
+ return document.querySelector('.seat-grid .seat[data-sid="'+sid+'"]');
+}
+function seatsAt(row, col){
+ return document.querySelectorAll('.seat-grid .seat[data-row="'+row+'"][data-col="'+col+'"]');
 }
 function makePupil(sid){
  const info=STUDENTS[sid]||{};
@@ -295,14 +320,20 @@ function makePupil(sid){
 function clearSeatEl(seat){
  const sid=seat.dataset.sid;
  if(!sid) return null;
- seat.dataset.sid='';
- refreshSeatVisual(seat);
+ const row=seat.dataset.row, col=seat.dataset.col;
+ seatsAt(row, col).forEach(s=>{
+  s.dataset.sid='';
+  refreshSeatVisual(s);
+ });
  return sid;
 }
 function occupySeat(seat, sid){
- seat.dataset.sid=String(sid);
- setInputs(sid, seat.dataset.row, seat.dataset.col);
- refreshSeatVisual(seat);
+ const row=seat.dataset.row, col=seat.dataset.col;
+ setInputs(sid, row, col);
+ seatsAt(row, col).forEach(s=>{
+  s.dataset.sid=String(sid);
+  refreshSeatVisual(s);
+ });
  const poolChip=document.querySelector('#seatPool .pupil[data-sid="'+sid+'"]');
  if(poolChip) poolChip.remove();
  updatePoolCount();
@@ -322,15 +353,19 @@ function placeAt(sid, seat){
  const fromSeat=findSeatBySid(sid);
  if(targetSid && String(targetSid)===String(sid)){ clearSelection(); return; }
  if(targetSid){
-  // swap
   if(fromSeat){
    occupySeat(fromSeat, targetSid);
   } else {
    unseat(targetSid);
   }
  }
- if(fromSeat && fromSeat!==seat){
-  clearSeatEl(fromSeat);
+ if(fromSeat){
+  const fr=fromSeat.dataset.row, fc=fromSeat.dataset.col;
+  if(!(fr===seat.dataset.row && fc===seat.dataset.col)){
+   // Only clear origin if different cell (after possible swap already moved target there)
+   const stillMe=fromSeat.dataset.sid && String(fromSeat.dataset.sid)===String(sid);
+   if(stillMe) clearSeatEl(fromSeat);
+  }
  }
  occupySeat(seat, sid);
  clearSelection();
@@ -341,9 +376,9 @@ function selectSid(sid){
  clearSelection();
  selectedSid=String(sid);
  document.querySelectorAll('.pupil[data-sid="'+sid+'"], .seat[data-sid="'+sid+'"]').forEach(el=>el.classList.add('selected'));
- document.querySelectorAll('#seatGrid .seat').forEach(el=>el.classList.add('tap-target'));
+ document.querySelectorAll('.seat-grid .seat').forEach(el=>el.classList.add('tap-target'));
  const info=STUDENTS[sid]||{};
- setHint('Đã chọn '+ (info.name||sid) +' — chạm một ô chỗ ngồi (hoặc chạm lại để bỏ chọn). Kéo về vùng «Chưa xếp chỗ» để bỏ chỗ.');
+ setHint('Đã chọn '+ (info.name||sid) +' — chạm một ô trên bản bất kỳ. Kéo về «Chưa xếp chỗ» để bỏ chỗ.');
 }
 
 function bindPupil(el){
@@ -385,9 +420,11 @@ function bindSeat(seat){
 
 (function initSeating(){
  const grid=document.getElementById('seatGrid');
+ const gridT=document.getElementById('seatGridTeacher');
  const pool=document.getElementById('seatPool');
  if(!grid || !pool) return;
  grid.querySelectorAll('.seat').forEach(bindSeat);
+ if(gridT) gridT.querySelectorAll('.seat').forEach(bindSeat);
  pool.querySelectorAll('.pupil').forEach(bindPupil);
  pool.addEventListener('dragover', e=>{ e.preventDefault(); pool.classList.add('drag-over'); });
  pool.addEventListener('dragleave', ()=> pool.classList.remove('drag-over'));
@@ -406,8 +443,7 @@ function bindSeat(seat){
    const hid=document.getElementById('team_'+sid);
    if(hid) hid.value=inp.value;
    if(STUDENTS[sid]) STUDENTS[sid].team=inp.value;
-   const seat=findSeatBySid(sid);
-   if(seat) refreshSeatVisual(seat);
+   document.querySelectorAll('.seat-grid .seat[data-sid="'+sid+'"]').forEach(refreshSeatVisual);
   });
  });
  updatePoolCount();
