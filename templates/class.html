@@ -37,14 +37,16 @@ tr.att-late td{background:#fff8e8!important}
 .view-label{font-size:13px;font-weight:750;color:#334155;margin:14px 0 6px}
 .view-label span{font-weight:500;color:#64748b}
 .seat-grid{display:grid;gap:6px;overflow:auto;padding-bottom:4px}
-.seat{min-height:78px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:5px 6px;font-size:11px;display:flex;flex-direction:column;justify-content:flex-start;gap:2px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
+.seat{min-height:78px;border:1px dashed #c9d4e6;border-radius:8px;background:#f8fafc;padding:4px 5px;font-size:10px;display:flex;flex-direction:column;justify-content:flex-start;gap:1px;cursor:pointer;transition:background .12s,border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
 .seat.filled{border-style:solid;background:#fff;box-shadow:0 1px 3px #15284a0a}
-.seat .sn{font-weight:750;color:#1e3a6e;line-height:1.2;overflow-wrap:anywhere;pointer-events:none}
-.seat .meta{color:#718096;font-size:10px;pointer-events:none}
-.seat-icons{display:flex;flex-wrap:wrap;gap:2px;margin-top:3px;pointer-events:none}
-.seat-photo{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:7px;display:block;pointer-events:none;background:#e8eef5;margin:0 0 3px}
-.seat.has-photo{min-height:110px;padding:4px}
-.seat.has-photo .sn{font-size:11px}
+.seat .sn{font-weight:700;color:#1e3a6e;line-height:1.15;font-size:10px;overflow-wrap:anywhere;pointer-events:none;letter-spacing:-.01em}
+.seat .meta{color:#718096;font-size:9px;line-height:1.2;pointer-events:none}
+.seat .stt{font-weight:800;color:#0f6b63;font-size:9px;pointer-events:none}
+.seat-icons{display:flex;flex-wrap:wrap;gap:2px;margin-top:2px;pointer-events:none}
+.seat-icons .ico{font-size:8px;padding:1px 3px}
+.seat-photo{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:6px;display:block;pointer-events:none;background:#e8eef5;margin:0 0 2px;max-height:52px}
+.seat.has-photo{min-height:100px;padding:3px}
+.seat.has-photo .sn{font-size:9px}
 .sd-avatar{width:96px;height:96px;border-radius:14px;object-fit:cover;background:#e8eef5;display:block;margin:0 0 10px;box-shadow:0 4px 14px #0b3d3a18}
 .photo-panel{margin:10px 0 14px;padding:12px;border:1px dashed #b7d0ca;border-radius:12px;background:#f3faf8}
 .photo-panel form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
@@ -68,7 +70,7 @@ tr.att-late td{background:#fff8e8!important}
 .seat-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
 .pool{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;min-height:44px;padding:8px;border:1px dashed #c9d4e6;border-radius:10px;background:#f8fafc}
 .pool.drag-over{border-color:#315de8;background:#eef3ff}
-.pupil{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #d0daf0;border-radius:999px;background:#fff;font-size:12px;font-weight:650;color:#1e3a6e;cursor:grab;touch-action:none;box-shadow:0 1px 2px #15284a0a}
+.pupil{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid #d0daf0;border-radius:999px;background:#fff;font-size:11px;font-weight:650;color:#1e3a6e;cursor:grab;touch-action:none;box-shadow:0 1px 2px #15284a0a;max-width:100%;overflow-wrap:anywhere}
 .pupil:active{cursor:grabbing}.pupil.selected{outline:2px solid #315de8;background:#eef3ff}
 .pupil .code{color:#718096;font-weight:600;font-size:11px}
 .seat-hint{font-size:12px;color:#53627a;margin:0 0 8px}
@@ -228,10 +230,11 @@ repeat({{n}},minmax(72px,1fr))
 {% set g = (st.gender or '')|lower %}
 {% set att = sm.today_status or '' %}
 {% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{stt_map.get(st.id,'')}}. {{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
 {% if photo_urls.get(st.id) %}<img class="seat-photo" src="{{photo_urls[st.id]}}" alt="" loading="lazy">{% endif %}
-<span class="sn">{{ short_name(st.name) }}</span>
-<span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+<span class="stt">{{ stt_map.get(st.id, '') }}</span>
+<span class="sn">{{ st.name }}</span>
+<span class="meta">{% if st.team %}Tổ {{st.team}} · {% endif %}{{ st.student_code }}</span>
 <span class="seat-icons">
 {% if 'nữ' in g or g=='nu' or g.startswith('f') %}<span class="ico g-nu">Nữ</span>{% elif 'nam' in g or g.startswith('m') %}<span class="ico g-nam">Nam</span>{% elif st.gender %}<span class="ico g-khac">{{st.gender[:3]}}</span>{% endif %}
 {% if sm.total_points > 0 %}<span class="ico pts-pos">+{{'%.1f'|format(sm.total_points)}}</span>{% elif sm.total_points < 0 %}<span class="ico pts-neg">{{'%.1f'|format(sm.total_points)}}</span>{% else %}<span class="ico pts-zero">0</span>{% endif %}
@@ -256,10 +259,11 @@ repeat({{n}},minmax(72px,1fr))
 {% set g = (st.gender or '')|lower %}
 {% set att = sm.today_status or '' %}
 {% set att_cls = 'att-cm' if att=='Có mặt' else ('att-tre' if 'trễ' in att|lower or 'tre' in att|lower else ('att-vang' if att else '')) %}
-<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
+<div class="seat filled{% if tc %} team-{{tc}}{% endif %}{% if att_cls %} {{att_cls}}{% endif %}{% if photo_urls.get(st.id) %} has-photo{% endif %}" data-row="{{r}}" data-col="{{c}}" data-sid="{{st.id}}" draggable="true" title="{{stt_map.get(st.id,'')}}. {{st.name}} · {{st.student_code}} · {{'%.1f'|format(sm.total_points)}} điểm">
 {% if photo_urls.get(st.id) %}<img class="seat-photo" src="{{photo_urls[st.id]}}" alt="" loading="lazy">{% endif %}
-<span class="sn">{{ short_name(st.name) }}</span>
-<span class="meta">{{st.student_code}}{% if st.team %} · Tổ {{st.team}}{% endif %}</span>
+<span class="stt">{{ stt_map.get(st.id, '') }}</span>
+<span class="sn">{{ st.name }}</span>
+<span class="meta">{% if st.team %}Tổ {{st.team}} · {% endif %}{{ st.student_code }}</span>
 <span class="seat-icons">
 {% if 'nữ' in g or g=='nu' or g.startswith('f') %}<span class="ico g-nu">Nữ</span>{% elif 'nam' in g or g.startswith('m') %}<span class="ico g-nam">Nam</span>{% elif st.gender %}<span class="ico g-khac">{{st.gender[:3]}}</span>{% endif %}
 {% if sm.total_points > 0 %}<span class="ico pts-pos">+{{'%.1f'|format(sm.total_points)}}</span>{% elif sm.total_points < 0 %}<span class="ico pts-neg">{{'%.1f'|format(sm.total_points)}}</span>{% else %}<span class="ico pts-zero">0</span>{% endif %}
@@ -279,7 +283,7 @@ repeat({{n}},minmax(72px,1fr))
 <div class="pool" id="seatPool" aria-label="Học sinh chưa xếp chỗ">
 {% for s in students %}
 {% if not s.seat_row or not s.seat_col %}
-<span class="pupil" draggable="true" data-sid="{{s.id}}" data-code="{{s.student_code}}" data-name="{{s.name}}" data-short="{{ short_name(s.name) }}" data-team="{{s.team or ''}}"><span>{{ short_name(s.name) }}</span><span class="code">{{s.student_code}}</span>{% set sm=student_summaries[s.id] %}{% if sm.neg_n %}<span class="ico vp">!{{sm.neg_n}}</span>{% endif %}{% if sm.pos_n %}<span class="ico tot">★{{sm.pos_n}}</span>{% endif %}</span>
+<span class="pupil" draggable="true" data-sid="{{s.id}}" data-code="{{s.student_code}}" data-name="{{s.name}}" data-short="{{ short_name(s.name) }}" data-team="{{s.team or ''}}"><span class="stt" style="font-weight:800;color:#0f6b63">{{ stt_map.get(s.id, '') }}</span><span>{{ s.name }}</span><span class="code">{{s.student_code}}</span>{% set sm=student_summaries[s.id] %}{% if sm.neg_n %}<span class="ico vp">!{{sm.neg_n}}</span>{% endif %}{% if sm.pos_n %}<span class="ico tot">★{{sm.pos_n}}</span>{% endif %}</span>
 {% endif %}
 {% endfor %}
 </div>
@@ -374,6 +378,7 @@ STUDENTS["{{s.id}}"]={
  code:{{s.student_code|tojson}},
  name:{{s.name|tojson}},
  short:{{ short_name(s.name)|tojson }},
+ stt:{{ stt_map.get(s.id, loop.index) }},
  team:{{ (s.team or '')|tojson }},
  gender:{{ (s.gender or '')|tojson }},
  birth:{{ (s.birth_date or '')|tojson }},
@@ -554,10 +559,12 @@ function refreshSeatVisual(seat){
  const att=attBadge(info.att); if(att.cls) seat.classList.add(att.cls);
  if(info.photo) seat.classList.add('has-photo');
  seat.draggable=true;
- const tip=[info.name, info.code, (Number(info.points)||0).toFixed(1)+' điểm', info.att].filter(Boolean).join(' · ');
+ const tip=[(info.stt?info.stt+'.':''), info.name, info.code, (Number(info.points)||0).toFixed(1)+' điểm', info.att].filter(Boolean).join(' · ');
  seat.title=tip;
  const img=info.photo ? '<img class="seat-photo" src="'+esc(info.photo)+'" alt="" loading="lazy">' : '';
- seat.innerHTML=img+'<span class="sn">'+(info.short||'?')+'</span><span class="meta">'+(info.code||'')+(team?' · Tổ '+team:'')+'</span>'+seatIconsHtml(info);
+ const stt=info.stt ? '<span class="stt">'+esc(info.stt)+'</span>' : '';
+ const meta=(team?'Tổ '+team+' · ':'')+(info.code||'');
+ seat.innerHTML=img+stt+'<span class="sn">'+(info.name||info.short||'?')+'</span><span class="meta">'+meta+'</span>'+seatIconsHtml(info);
 }
 window.refreshSeatVisual=refreshSeatVisual;
 
@@ -607,7 +614,7 @@ function makePupil(sid){
  let extra='';
  if(info.neg) extra+='<span class="ico vp">!'+info.neg+'</span>';
  if(info.pos) extra+='<span class="ico tot">★'+info.pos+'</span>';
- el.innerHTML='<span>'+(info.short||'?')+'</span><span class="code">'+(info.code||'')+'</span>'+extra;
+ el.innerHTML='<span class="stt" style="font-weight:800;color:#0f6b63">'+(info.stt||'')+'</span><span>'+(info.name||info.short||'?')+'</span><span class="code">'+(info.code||'')+'</span>'+extra;
  bindPupil(el);
  return el;
 }

@@ -1151,11 +1151,12 @@ def class_page(cid):
     rows=int(cl["layout_rows"] or 6); cols=int(cl["layout_cols"] or 8)
     seat_map, unseated=build_seat_map(students, rows, cols)
     photo_urls, photo_folder, photo_count = student_photo_urls(cl["name"], students)
+    stt_map={st["id"]: i for i, st in enumerate(students, 1)}
     return render_template(
         "class.html", cl=cl, students=students, student_summaries=student_summaries, plans=plans,
         today=date.today().isoformat(), event_defaults=EVENT_DEFAULTS,
         layout_rows=rows, layout_cols=cols, seat_map=seat_map, unseated=unseated, short_name=short_name,
-        photo_urls=photo_urls, photo_folder=photo_folder, photo_count=photo_count,
+        photo_urls=photo_urls, photo_folder=photo_folder, photo_count=photo_count, stt_map=stt_map,
     )
 
 
