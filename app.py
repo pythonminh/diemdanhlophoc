@@ -16,6 +16,8 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
+# OPEN_EDIT=1 (mặc định): ai cũng xem + sửa, không cần đăng nhập. Đặt OPEN_EDIT=0 để bật lại mật khẩu.
+OPEN_EDIT = os.environ.get("OPEN_EDIT", "1").strip().lower() in ("1", "true", "yes", "on")
 # Resolve a writable SQLite path. Free Render has no /var/data disk → must not crash.
 def _path_writable(path):
     parent = os.path.dirname(os.path.abspath(path)) or "."
@@ -93,6 +95,10 @@ def verify_password(password, salt, digest):
 
 @app.before_request
 def require_edit_password_for_mutations():
+    # Chế độ mở: luôn cho sửa, không chặn POST.
+    if OPEN_EDIT:
+        session["can_edit"] = True
+        return None
     if request.method == "POST" and request.endpoint != "login" and not session.get("can_edit"):
         flash("Cần đăng nhập bằng mật khẩu chỉnh sửa để thao tác.")
         # After login, send user back to the page they were viewing — never to a POST-only URL
@@ -125,9 +131,18 @@ def require_edit_password_for_mutations():
         if not next_url:
             next_url = url_for("index")
         return redirect(url_for("login", next=next_url))
+    return None
+
+@app.context_processor
+def inject_auth_flags():
+    return {"open_edit": OPEN_EDIT, "can_edit": OPEN_EDIT or bool(session.get("can_edit"))}
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    if OPEN_EDIT:
+        session["can_edit"] = True
+        flash("Ứng dụng đang mở sửa tự do — không cần đăng nhập.")
+        return redirect(request.args.get("next") or url_for("index"))
     if request.method == "POST":
         password = request.form.get("password", "")
         with db() as c:
@@ -154,7 +169,11 @@ def login():
 @app.post("/logout")
 def logout():
     session.clear()
-    flash("Đã thoát chế độ chỉnh sửa; hiện chỉ xem.")
+    if OPEN_EDIT:
+        session["can_edit"] = True
+        flash("Ứng dụng đang mở sửa tự do.")
+    else:
+        flash("Đã thoát chế độ chỉnh sửa; hiện chỉ xem.")
     return redirect(request.referrer or url_for("index"))
 
 @app.route("/change-password", methods=["GET", "POST"])

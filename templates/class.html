@@ -156,11 +156,14 @@ tr.att-late td{background:#fff8e8!important}
 }
 </style><body>
 <div class="nav-chip" style="justify-content:flex-end;margin:8px 0">
-<span class="badge">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>
-{% if session.get("can_edit") %}
+{% if open_edit %}
+<span class="badge">Mở sửa tự do</span>
+{% elif can_edit %}
+<span class="badge">ĐANG SỬA</span>
 <a href="/change-password">Đổi MK</a>
 <form method="post" action="/logout" style="margin:0"><button type="submit" style="min-height:36px;padding:0 12px;font-size:13px">Thoát</button></form>
 {% else %}
+<span class="badge">CHỈ XEM</span>
 <a href="/login">Đăng nhập</a>
 {% endif %}
 </div>

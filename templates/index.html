@@ -171,7 +171,9 @@ details.tools .inner{padding:0 16px 16px; border-top:1px solid var(--line)}
   <header class="topbar">
     <div class="brand-mark"><span></span> Điểm danh</div>
     <div class="chip">
-      {% if session.get("can_edit") %}
+      {% if open_edit %}
+      <span class="badge">Mở sửa tự do</span>
+      {% elif can_edit %}
       <span class="badge">ĐANG SỬA</span>
       <a href="/change-password">Đổi MK</a>
       <form method="post" action="/logout" style="margin:0;display:inline"><button class="btn ghost sm" type="submit">Thoát</button></form>
