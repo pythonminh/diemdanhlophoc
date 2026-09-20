@@ -70,10 +70,12 @@ Dùng <b>Lưu lên GitHub</b> sau mỗi buổi học, hoặc gắn Disk <code>/v
 </section>
 
 <section>
-<h2>Đồng bộ danh sách từ .tex trong repo</h2>
-<p class="muted">Chỉ nạp roster từ <code>danh-sach/*.tex</code> (vd. 10T1). Không gồm điểm danh.</p>
+<h2>Đồng bộ danh sách từ GitHub (thư mục lớp)</h2>
+<p class="muted">Mỗi lớp một thư mục trong <code>danh-sach/</code>, gồm 2 file:
+<code>danh_sach.tex</code> (hồ sơ HS) và <code>so_do.tex</code> (tổ + hàng/cột).
+Vd. <code>danh-sach/10T1/danh_sach.tex</code>. Đồng bộ sẽ đọc tất cả thư mục lớp.</p>
 {% if session.get("can_edit") %}
-<form method="post" action="/restore-from-tex"><button type="submit" class="secondary">Đồng bộ lại từ danh-sach/*.tex</button></form>
+<form method="post" action="/restore-from-tex"><button type="submit" class="secondary">Đồng bộ lại từ danh-sach/&lt;lớp&gt;/</button></form>
 {% endif %}
 </section>
 

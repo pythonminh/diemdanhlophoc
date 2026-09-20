@@ -393,6 +393,79 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "pythonminh/diemdanhlophoc").strip()
 GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main").strip()
 
+# Folder name → tên hiển thị trong app
+CLASS_DISPLAY_NAMES = {
+    "LopTangCuong": "Lớp tăng cường",
+    "NguyenVanDau": "Nguyễn Văn Đậu",
+    "QuangTrung": "Quang Trung",
+}
+
+def class_name_from_folder(folder_name):
+    name = (folder_name or "").strip()
+    if name.lower().startswith("class"):
+        name = name[5:]
+    return CLASS_DISPLAY_NAMES.get(name, name)
+
+def _read_tex(path):
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+def _pick_class_tex_files(folder_path):
+    """Return (danh_sach_path, so_do_path) inside a class folder."""
+    files = [f for f in os.listdir(folder_path) if f.lower().endswith(".tex")]
+    danh = so = None
+    for f in files:
+        low = f.lower()
+        if low.startswith("mau_"):
+            continue
+        if low in ("danh_sach.tex", "danhsach.tex") or low.startswith("danh_sach"):
+            danh = f
+        elif low in ("so_do.tex", "sodo.tex") or low.startswith("so_do"):
+            so = f
+    if not danh:
+        for f in sorted(files):
+            low = f.lower()
+            if low.startswith("mau_") or low.startswith("so_do") or low.startswith("sodo"):
+                continue
+            danh = f
+            break
+    if not so:
+        for f in sorted(files):
+            low = f.lower()
+            if low.startswith("so_do") or low.startswith("sodo"):
+                so = f
+                break
+    return (
+        os.path.join(folder_path, danh) if danh else None,
+        os.path.join(folder_path, so) if so else None,
+    )
+
+def _upsert_tex_into_class(class_name, tex_path):
+    content = _read_tex(tex_path)
+    if not content.strip():
+        return 0, 0, False
+    records = parse_tex_students(content)
+    if not records:
+        return 0, 0, False
+    created = False
+    with db() as c:
+        row = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()
+        if row:
+            cid = row["id"]
+        else:
+            c.execute("INSERT INTO classes(name) VALUES(?)", (class_name,))
+            cid = c.execute("SELECT id FROM classes WHERE name=?", (class_name,)).fetchone()["id"]
+            created = True
+    for s in records:
+        s.setdefault("phone", ""); s.setdefault("parent_name", ""); s.setdefault("parent_phone", "")
+    result = upsert_students(cid, records)
+    added = result[0] if result else 0
+    updated = result[1] if result else 0
+    return added, updated, created
+
 def _rows(c, sql, args=()):
     return [dict(r) for r in c.execute(sql, args).fetchall()]
 
@@ -559,40 +632,48 @@ def restore_data_if_empty():
     return "tex"
 
 def sync_classes_from_danh_sach(only_if_empty=False):
-    """Create/update classes from danh-sach/*.tex (skip mau_*.tex). Roster comes back from git after wipe."""
+    """Sync from danh-sach/<Lớp>/{danh_sach.tex, so_do.tex} (legacy flat *.tex still supported)."""
     with db() as c:
-        n=c.execute("SELECT COUNT(*) FROM classes").fetchone()[0]
-        if only_if_empty and n>0:
+        n = c.execute("SELECT COUNT(*) FROM classes").fetchone()[0]
+        if only_if_empty and n > 0:
             return 0, 0, 0
     if not os.path.isdir(DANH_SACH_DIR):
         return 0, 0, 0
-    created=added=updated=0
-    for fn in sorted(os.listdir(DANH_SACH_DIR)):
-        if not fn.lower().endswith(".tex"): continue
-        if fn.lower().startswith("mau_"): continue
-        class_name=os.path.splitext(fn)[0].strip()
-        if not class_name: continue
-        path=os.path.join(DANH_SACH_DIR, fn)
-        try:
-            with open(path, "r", encoding="utf-8-sig") as f:
-                content=f.read()
-        except OSError:
+    created = added = updated = 0
+
+    for entry in sorted(os.listdir(DANH_SACH_DIR)):
+        folder = os.path.join(DANH_SACH_DIR, entry)
+        if not os.path.isdir(folder):
             continue
-        records=parse_tex_students(content)
-        if not records: continue
-        with db() as c:
-            row=c.execute("SELECT id FROM classes WHERE name=?",(class_name,)).fetchone()
-            if row:
-                cid=row["id"]
-            else:
-                c.execute("INSERT INTO classes(name) VALUES(?)",(class_name,))
-                cid=c.execute("SELECT id FROM classes WHERE name=?",(class_name,)).fetchone()["id"]
-                created+=1
-        for s in records:
-            s.setdefault("phone",""); s.setdefault("parent_name",""); s.setdefault("parent_phone","")
-        result=upsert_students(cid, records)
-        if result:
-            added+=result[0]; updated+=result[1]
+        if entry.startswith(".") or entry.lower() in ("mau", "_templates"):
+            continue
+        class_name = class_name_from_folder(entry)
+        if not class_name:
+            continue
+        danh_path, so_path = _pick_class_tex_files(folder)
+        # Roster first, then seating (team/seat columns).
+        for path in (danh_path, so_path):
+            if not path:
+                continue
+            a, u, was_new = _upsert_tex_into_class(class_name, path)
+            added += a
+            updated += u
+            if was_new:
+                created += 1
+
+    # Legacy: danh-sach/10T1.tex at root of danh-sach/
+    for fn in sorted(os.listdir(DANH_SACH_DIR)):
+        path = os.path.join(DANH_SACH_DIR, fn)
+        if not os.path.isfile(path) or not fn.lower().endswith(".tex"):
+            continue
+        if fn.lower().startswith("mau_") or fn.lower().startswith("so_do"):
+            continue
+        class_name = os.path.splitext(fn)[0].strip()
+        a, u, was_new = _upsert_tex_into_class(class_name, path)
+        added += a
+        updated += u
+        if was_new:
+            created += 1
     return created, added, updated
 
 # Empty DB after Render wipe → restore from GitHub/local snapshot, else tex roster.
@@ -617,7 +698,7 @@ def upsert_attendance(c, student_id, day, status, note=""):
 @app.post("/restore-from-tex")
 def restore_from_tex():
     created, added, updated = sync_classes_from_danh_sach(only_if_empty=False)
-    flash(f"Đã đồng bộ từ danh-sach/*.tex: tạo {created} lớp, thêm {added} HS, cập nhật {updated} HS.")
+    flash(f"Đã đồng bộ từ danh-sach/<lớp>/: tạo {created} lớp, thêm {added} HS, cập nhật {updated} HS.")
     return redirect(url_for("index"))
 
 @app.get("/snapshot.json")
