@@ -23,6 +23,8 @@ Mỗi **một thư mục = một lớp**. Trong thư mục có **2 file LaTeX**:
 2. Trên app: đăng nhập → **Đồng bộ lại từ danh-sach/&lt;lớp&gt;/**.
 3. Mã HS trùng → cập nhật hồ sơ / chỗ ngồi; lịch sử điểm danh & điểm được giữ.
 
+**Chiều ngược (app → GitHub):** dán danh sách / Excel / lưu sơ đồ trên app sẽ ghi lại `danh_sach.tex` + `so_do.tex`. Nếu Render có `GITHUB_TOKEN`, file được đẩy lên repo; hoặc bấm **Lưu danh sách .tex lên GitHub** / **Lưu lên GitHub** (snapshot + mọi lớp).
+
 ## Quy ước sơ đồ (`so_do.tex`)
 
 - Hàng 1 sát bảng giáo viên

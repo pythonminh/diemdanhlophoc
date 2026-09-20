@@ -229,6 +229,7 @@ details.tools .inner{padding:0 16px 16px; border-top:1px solid var(--line)}
       {% if session.get("can_edit") %}
       <div class="actions">
         <form method="post" action="/snapshot/save-github"><button class="btn amber block" type="submit">Lưu lên GitHub</button></form>
+        <p class="muted" style="margin:6px 0 0;font-size:12px">Nút này lưu <code>snapshot.json</code> và đồng thời đẩy mọi file <code>danh-sach/&lt;lớp&gt;/*.tex</code>.</p>
         <form method="post" action="/snapshot/load-github"><button class="btn ghost block" type="submit">Mở từ GitHub</button></form>
         <a class="btn ghost block" href="/snapshot.json">Tải snapshot.json</a>
         <form method="post" action="/restore-from-tex"><button class="btn ghost block" type="submit">Đồng bộ danh-sach/</button></form>

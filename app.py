@@ -112,7 +112,7 @@ def require_edit_password_for_mutations():
                 next_url = None
         if not next_url:
             path = request.path or "/"
-            for suffix in ("/seating", "/photos-bulk", "/bulk-record", "/import-xlsx", "/import-text", "/import-tex", "/settings", "/plan", "/student/add"):
+            for suffix in ("/seating", "/photos-bulk", "/bulk-record", "/import-xlsx", "/import-text", "/import-tex", "/save-tex-github", "/settings", "/plan", "/student/add"):
                 if path.endswith(suffix):
                     next_url = path[: -len(suffix)] or "/"
                     if suffix == "/seating":
@@ -787,6 +787,196 @@ def push_snapshot_to_github(snap=None):
     save_snapshot_local(snap)  # keep local copy in container too
     return result.get("content", {}).get("html_url") or f"https://github.com/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/data/snapshot.json"
 
+def latex_escape(s):
+    s = str(s or "")
+    return (
+        s.replace("\\", "\\textbackslash{}")
+        .replace("&", "\\&")
+        .replace("%", "\\%")
+        .replace("$", "\\$")
+        .replace("#", "\\#")
+        .replace("_", "\\_")
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+    )
+
+def class_tex_dir(class_name, create=False):
+    """Resolve danh-sach/<folder>/ for a class display name."""
+    folder = class_photo_folder_name(class_name)
+    path = os.path.join(DANH_SACH_DIR, folder)
+    if not os.path.isdir(path):
+        for cand in (folder, class_name, CLASS_FOLDER_FROM_NAME.get(class_name, "")):
+            if not cand:
+                continue
+            alt = os.path.join(DANH_SACH_DIR, cand)
+            if os.path.isdir(alt):
+                return alt, cand
+    if create:
+        os.makedirs(path, exist_ok=True)
+    return path, folder
+
+def _row_get(st, key, default=""):
+    try:
+        if hasattr(st, "keys") and key in st.keys():
+            v = st[key]
+            return default if v is None else v
+    except Exception:
+        pass
+    if isinstance(st, dict):
+        v = st.get(key, default)
+        return default if v is None else v
+    return default
+
+def build_danh_sach_tex(class_name, students):
+    lines = [
+        f"% Danh sách học sinh — {class_name} (xuất từ app điểm danh)",
+        f"% Cập nhật: {datetime.now().isoformat(timespec='seconds')}",
+        r"\begin{longtable}{|c|l|p{6cm}|c|c|}",
+        r"\hline",
+        r"STT & Mã HS & Họ và tên & Ngày sinh & GT \\",
+        r"\hline",
+    ]
+    for i, st in enumerate(students, 1):
+        lines.append(
+            f"{i} & {latex_escape(_row_get(st,'student_code'))} & {latex_escape(_row_get(st,'name'))} & "
+            f"{latex_escape(_row_get(st,'birth_date'))} & {latex_escape(_row_get(st,'gender'))} \\\\"
+        )
+        lines.append(r"\hline")
+    lines.append(r"\end{longtable}")
+    lines.append("")
+    return "\n".join(lines)
+
+def build_so_do_tex(class_name, students):
+    lines = [
+        f"% Sơ đồ chỗ ngồi — {class_name} (xuất từ app điểm danh)",
+        f"% Hàng 1 gần bảng; Cột 1 từ trái nhìn lên bảng",
+        f"% Cập nhật: {datetime.now().isoformat(timespec='seconds')}",
+        "",
+    ]
+    by_team = {}
+    no_team = []
+    for st in students:
+        team = str(_row_get(st, "team") or "").strip()
+        if team:
+            by_team.setdefault(team, []).append(st)
+        else:
+            no_team.append(st)
+    def team_sort_key(t):
+        return (0, int(t)) if str(t).isdigit() else (1, str(t))
+    ordered = sorted(by_team.keys(), key=team_sort_key)
+    if no_team:
+        by_team[""] = no_team
+        ordered.append("")
+    if not ordered:
+        ordered = ["1"]
+        by_team["1"] = []
+    stt = 1
+    for team in ordered:
+        title = f"Tổ {team}" if team else "Chưa phân tổ"
+        lines.append(f"\\section*{{{title}}}")
+        lines.append(r"\begin{longtable}{|c|l|p{5cm}|c|c|c|c|c|}")
+        lines.append(r"\hline")
+        lines.append(r"STT & Mã HS & Họ và tên & Ngày sinh & GT & Tổ & Hàng & Cột \\")
+        lines.append(r"\hline")
+        for st in by_team.get(team, []):
+            row = _row_get(st, "seat_row", None)
+            col = _row_get(st, "seat_col", None)
+            row_s = "" if row is None else str(row)
+            col_s = "" if col is None else str(col)
+            t_s = team or str(_row_get(st, "team") or "")
+            lines.append(
+                f"{stt} & {latex_escape(_row_get(st,'student_code'))} & {latex_escape(_row_get(st,'name'))} & "
+                f"{latex_escape(_row_get(st,'birth_date'))} & {latex_escape(_row_get(st,'gender'))} & "
+                f"{latex_escape(t_s)} & {latex_escape(row_s)} & {latex_escape(col_s)} \\\\"
+            )
+            lines.append(r"\hline")
+            stt += 1
+        lines.append(r"\end{longtable}")
+        lines.append("")
+    return "\n".join(lines)
+
+def push_repo_text_file(rel_path, text, message):
+    """Create or update a UTF-8 text file in the GitHub repo via Contents API."""
+    if not GITHUB_TOKEN:
+        raise RuntimeError("Chưa đặt GITHUB_TOKEN trên Render (Settings → Environment).")
+    rel_path = rel_path.replace("\\", "/").lstrip("/")
+    content_b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    api_path = f"/repos/{GITHUB_REPO}/contents/{rel_path}"
+    sha = None
+    try:
+        existing = github_api("GET", f"{api_path}?ref={GITHUB_BRANCH}")
+        sha = existing.get("sha")
+    except RuntimeError:
+        sha = None
+    body = {"message": message, "content": content_b64, "branch": GITHUB_BRANCH}
+    if sha:
+        body["sha"] = sha
+    result = github_api("PUT", api_path, body)
+    return result.get("content", {}).get("html_url") or f"https://github.com/{GITHUB_REPO}/blob/{GITHUB_BRANCH}/{rel_path}"
+
+def export_class_tex_files(cid):
+    """Write danh_sach.tex + so_do.tex for a class. Returns (folder, danh_text, so_text, n)."""
+    with db() as c:
+        cl = c.execute("SELECT * FROM classes WHERE id=?", (cid,)).fetchone()
+        if not cl:
+            raise RuntimeError("Không tìm thấy lớp")
+        students = c.execute(
+            """SELECT * FROM students WHERE class_id=?
+               ORDER BY CASE WHEN team GLOB '[0-9]*' THEN CAST(team AS INTEGER) ELSE 999 END,
+                        team, seat_row, seat_col, student_code""",
+            (cid,),
+        ).fetchall()
+    class_name = cl["name"]
+    folder_path, folder = class_tex_dir(class_name, create=True)
+    danh = build_danh_sach_tex(class_name, students)
+    so = build_so_do_tex(class_name, students)
+    with open(os.path.join(folder_path, "danh_sach.tex"), "w", encoding="utf-8") as f:
+        f.write(danh)
+    with open(os.path.join(folder_path, "so_do.tex"), "w", encoding="utf-8") as f:
+        f.write(so)
+    return folder, danh, so, len(students)
+
+def push_class_tex_to_github(cid):
+    folder, danh, so, n = export_class_tex_files(cid)
+    url1 = push_repo_text_file(
+        f"danh-sach/{folder}/danh_sach.tex",
+        danh,
+        f"chore: cập nhật danh_sach.tex lớp {folder} ({n} HS)",
+    )
+    url2 = push_repo_text_file(
+        f"danh-sach/{folder}/so_do.tex",
+        so,
+        f"chore: cập nhật so_do.tex lớp {folder}",
+    )
+    return folder, n, url1, url2
+
+def persist_class_tex(cid, push_github=True):
+    """Always write local .tex; push to GitHub when token exists and push_github=True."""
+    folder, danh, so, n = export_class_tex_files(cid)
+    note = f"Đã ghi danh-sach/{folder}/danh_sach.tex & so_do.tex ({n} HS)"
+    if push_github and GITHUB_TOKEN:
+        url1 = push_repo_text_file(
+            f"danh-sach/{folder}/danh_sach.tex", danh, f"chore: cập nhật danh_sach.tex lớp {folder} ({n} HS)"
+        )
+        push_repo_text_file(
+            f"danh-sach/{folder}/so_do.tex", so, f"chore: cập nhật so_do.tex lớp {folder}"
+        )
+        note += f" và đã đẩy lên GitHub"
+        return note, url1
+    if push_github and not GITHUB_TOKEN:
+        note += " — chưa đẩy GitHub (thiếu GITHUB_TOKEN trên Render)"
+    return note, None
+
+def push_all_class_tex_to_github():
+    """Export + push .tex for every class. Returns list of folder names pushed."""
+    with db() as c:
+        classes = c.execute("SELECT id, name FROM classes ORDER BY name").fetchall()
+    pushed = []
+    for cl in classes:
+        folder, n, _, _ = push_class_tex_to_github(cl["id"])
+        pushed.append(f"{folder}({n})")
+    return pushed
+
 def fetch_snapshot_from_github():
     """Read data/snapshot.json from GitHub (token optional for public repos)."""
     if GITHUB_TOKEN:
@@ -856,7 +1046,13 @@ def download_snapshot():
 def snapshot_save_github():
     try:
         url = push_snapshot_to_github()
-        flash(f"Đã lưu toàn bộ dữ liệu lên GitHub: {url}")
+        msg = f"Đã lưu snapshot lên GitHub: {url}"
+        try:
+            pushed = push_all_class_tex_to_github()
+            msg += f" · Đã đẩy .tex {len(pushed)} lớp: {', '.join(pushed[:8])}" + ("…" if len(pushed) > 8 else "")
+        except Exception as te:
+            msg += f" · (Snapshot OK; đẩy .tex lỗi: {te})"
+        flash(msg)
     except Exception as e:
         flash(f"Không lưu được lên GitHub: {e}")
     return redirect(url_for("index"))
@@ -1182,6 +1378,11 @@ def save_seating(cid):
                 if col is not None and not (1<=col<=cols): col=None
                 c.execute("UPDATE students SET team=?, seat_row=?, seat_col=? WHERE id=?", (team, r, col, sid))
     flash(f"Đã lưu sơ đồ lớp ({rows}×{cols}) và tổ/chỗ ngồi.")
+    try:
+        note, _ = persist_class_tex(cid, push_github=True)
+        flash(note)
+    except Exception as e:
+        flash(f"Sơ đồ đã lưu trong app nhưng chưa ghi/đẩy .tex: {e}")
     return redirect(url_for("class_page",cid=cid)+"#so-do-lop")
 
 @app.post("/class/<int:cid>/import-xlsx")
@@ -1202,6 +1403,11 @@ def import_xlsx(cid):
     if result is None: return "Không tìm thấy lớp",404
     added,updated=result
     flash(f"Excel: đọc {len(parsed)} học sinh — thêm {added}, cập nhật {updated}. Lịch sử được giữ theo mã HS.")
+    try:
+        note, _ = persist_class_tex(cid, push_github=True)
+        flash(note)
+    except Exception as e:
+        flash(f"Danh sách đã vào app nhưng chưa ghi/đẩy .tex: {e}")
     return redirect(url_for("class_page",cid=cid))
 
 @app.post("/class/<int:cid>/import-text")
@@ -1214,7 +1420,21 @@ def import_text(cid):
     if result is None: return "Không tìm thấy lớp",404
     added,updated=result
     flash(f"Văn bản: đọc {len(parsed)} học sinh — thêm {added}, cập nhật {updated}. Lịch sử được giữ theo mã HS.")
+    try:
+        note, _ = persist_class_tex(cid, push_github=True)
+        flash(note)
+    except Exception as e:
+        flash(f"Danh sách đã vào app nhưng chưa ghi/đẩy .tex: {e}")
     return redirect(url_for("class_page",cid=cid))
+
+@app.post("/class/<int:cid>/save-tex-github")
+def save_tex_github(cid):
+    try:
+        folder, n, url1, url2 = push_class_tex_to_github(cid)
+        flash(f"Đã lưu .tex lớp {folder} ({n} HS) lên GitHub: {url1}")
+    except Exception as e:
+        flash(f"Không lưu .tex lên GitHub: {e}")
+    return redirect(url_for("class_page", cid=cid))
 
 @app.post("/class/<int:cid>/import-tex")
 def import_tex(cid):
@@ -1237,6 +1457,11 @@ def import_tex(cid):
     if result is None: return "Không tìm thấy lớp",404
     added,updated=result
     flash(f"Đọc xong {len(parsed)} học sinh: thêm {added}, cập nhật {updated}. Lịch sử đã có được giữ nguyên theo mã học sinh.")
+    try:
+        note, _ = persist_class_tex(cid, push_github=True)
+        flash(note)
+    except Exception as e:
+        flash(f"Đã nhập .tex vào app nhưng chưa đồng bộ lại GitHub: {e}")
     return redirect(url_for("class_page",cid=cid))
 
 @app.post("/class/<int:cid>/student/add")

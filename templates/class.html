@@ -159,9 +159,12 @@ tr.att-late td{background:#fff8e8!important}
 {% for m in get_flashed_messages() %}<p style="background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;padding:10px 12px;border-radius:10px">{{m}}</p>{% endfor %}
 <section><h2>Nhập / cập nhật danh sách học sinh</h2>
 <p class="muted">Có thể tải mẫu Excel, điền rồi tải lên; hoặc dán trực tiếp danh sách dạng mỗi dòng: Mã HS, Họ tên, Ngày sinh, Giới tính, Điện thoại HS, Tên phụ huynh, Điện thoại phụ huynh, Ghi chú, Tổ, Hàng, Cột, TB lớp 10, TB lớp 11 (ngăn cách bằng tab hoặc dấu phẩy). Mã đã có sẽ cập nhật, mã mới sẽ thêm; lịch sử được giữ.</p>
+<p class="muted"><b>Lưu ý:</b> «Đọc văn bản» đưa danh sách vào app ngay. Nếu Render có <code>GITHUB_TOKEN</code>, app sẽ tự ghi và đẩy <code>danh-sach/&lt;lớp&gt;/danh_sach.tex</code> + <code>so_do.tex</code> lên GitHub. Nút bên dưới dùng khi muốn đẩy lại thủ công.</p>
 <div class="upload-grid">
 <div class="detail-box"><h4>Nhập Excel</h4><p><a href="/class/{{cl.id}}/students-template.xlsx">⬇ Tải file Excel mẫu</a></p><form method="post" enctype="multipart/form-data" action="/class/{{cl.id}}/import-xlsx"><input type="file" name="xlsx_file" accept=".xlsx" required><button>Upload Excel và cập nhật</button></form></div>
-<div class="detail-box"><h4>Dán danh sách trực tiếp</h4><form method="post" action="/class/{{cl.id}}/import-text"><textarea name="students_text" rows="5" style="width:100%;padding:10px;border:1px solid #d6deeb;border-radius:8px" placeholder="HS051&#9;NGUYỄN VĂN B&#9;12/03/2011&#9;Nam" required></textarea><button>Đọc văn bản</button></form></div>
+<div class="detail-box"><h4>Dán danh sách trực tiếp</h4><form method="post" action="/class/{{cl.id}}/import-text"><textarea name="students_text" rows="5" style="width:100%;padding:10px;border:1px solid #d6deeb;border-radius:8px" placeholder="HS051&#9;NGUYỄN VĂN B&#9;12/03/2011&#9;Nam" required></textarea><button>Đọc văn bản</button></form>
+<form method="post" action="/class/{{cl.id}}/save-tex-github" style="margin-top:10px"><button type="submit" style="background:#b45309">Lưu danh sách .tex lên GitHub</button></form>
+</div>
 </div>
 <details style="margin-top:10px" open><summary>Nhập từ file LaTeX (.tex) — theo tổ &amp; chỗ ngồi</summary>
 <p class="muted" style="margin:8px 0">Tải mẫu có sẵn cột <b>Tổ / Hàng / Cột</b>, hoặc dùng marker <code>% Tổ 1</code> / <code>\section*{Tổ 1}</code>. Hàng 1 gần bảng; cột 1 từ trái nhìn lên bảng.</p>
