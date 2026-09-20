@@ -1,1 +1,55 @@
-<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Điểm danh lớp</title><style>body{font:16px Arial;max-width:1000px;margin:30px auto;padding:0 16px;background:#f5f7fb;color:#172033}section,.card{background:white;padding:18px;border-radius:12px;margin:14px 0;box-shadow:0 2px 8px #0001}input,button{padding:10px;margin:4px;border:1px solid #ccd2df;border-radius:7px}button{background:#2457d6;color:white;border:0;cursor:pointer}a{color:#2457d6}.warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}</style><body><div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px"><span style="font-size:13px;color:#53627a">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>{% if session.get("can_edit") %}<a href="/change-password">Đổi mật khẩu</a><form method="post" action="/logout" style="margin:0"><button style="padding:7px 12px">Thoát sửa</button></form>{% else %}<a href="/login">Đăng nhập chỉnh sửa</a>{% endif %}</div><h1>Quản lý điểm danh lớp</h1>{% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}{% if db_ephemeral %}<div class="warn"><b>Cảnh báo lưu dữ liệu:</b> File SQLite đang ở <code>{{db_path}}</code> — trên Render, mỗi lần Deploy/Restart sẽ <b>xóa danh sách lớp</b> nếu chưa gắn <b>Persistent Disk</b> vào <code>/var/data</code> và đặt biến môi trường <code>DATABASE_PATH=/var/data/diemdanh.db</code>. Gói Free thường không có disk; cần Starter (trả phí) hoặc dùng DB ngoài (Turso/Postgres).</div>{% endif %}<section><h2>Tạo lớp</h2><form method="post" action="/class/add"><input name="name" placeholder="Tên lớp (VD: 12QT1)" required><button>Tạo lớp</button></form></section><h2>Danh sách lớp</h2>{% for cl in classes %}<div class="card"><a href="/class/{{cl.id}}"><b>{{cl.name}}</b></a> — {{cl.school_year or "Chưa nhập năm học"}} | GVCN: {{cl.homeroom_teacher or "—"}}</div>{% else %}<p>Chưa có lớp. Hãy tạo lớp mới.</p>{% endfor %}</body></html>
+<!doctype html><html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Điểm danh lớp</title>
+<style>
+body{font:16px Arial;max-width:1000px;margin:30px auto;padding:0 16px;background:#f5f7fb;color:#172033}
+section,.card{background:white;padding:18px;border-radius:12px;margin:14px 0;box-shadow:0 2px 8px #0001}
+input,button{padding:10px;margin:4px;border:1px solid #ccd2df;border-radius:7px}
+button{background:#2457d6;color:white;border:0;cursor:pointer}a{color:#2457d6}
+.warn{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}
+.ok{background:#ecfdf5;border:1px solid #6ee7b7;color:#065f46;padding:12px 14px;border-radius:10px;margin:12px 0;font-size:14px;line-height:1.45}
+.muted{color:#64748b;font-size:13px}
+</style>
+<body>
+<div style="display:flex;justify-content:flex-end;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 14px">
+<span style="font-size:13px;color:#53627a">{{ "ĐANG SỬA" if session.get("can_edit") else "CHỈ XEM" }}</span>
+{% if session.get("can_edit") %}
+<a href="/change-password">Đổi mật khẩu</a>
+<form method="post" action="/logout" style="margin:0"><button style="padding:7px 12px">Thoát sửa</button></form>
+{% else %}
+<a href="/login">Đăng nhập chỉnh sửa</a>
+{% endif %}
+</div>
+<h1>Quản lý điểm danh lớp</h1>
+{% for m in get_flashed_messages() %}<p>{{m}}</p>{% endfor %}
+
+{% if db_ephemeral %}
+<div class="warn">
+<b>Chưa gắn Persistent Disk — dữ liệu sẽ mất khi Deploy/Restart.</b><br>
+DB đang ở <code>{{db_path}}</code>. Trên Render Dashboard → service → <b>Disks</b> → Add disk, mount <code>/var/data</code>, rồi Environment đặt <code>DATABASE_PATH=/var/data/diemdanh.db</code> (gói Starter).<br>
+Danh sách học sinh trong <code>danh-sach/*.tex</code> (vd. 10T1) sẽ <b>tự nạp lại</b> khi DB trống; điểm danh/sự kiện vẫn cần Disk mới giữ được.
+</div>
+{% elif disk_ok %}
+<div class="ok">Đã gắn Persistent Disk — danh sách lớp và điểm danh sẽ giữ sau khi deploy.</div>
+{% endif %}
+
+<section>
+<h2>Tạo lớp</h2>
+<form method="post" action="/class/add"><input name="name" placeholder="Tên lớp (VD: 12QT1)" required><button>Tạo lớp</button></form>
+</section>
+
+<section>
+<h2>Đồng bộ danh sách từ GitHub</h2>
+<p class="muted">Đọc file <code>danh-sach/*.tex</code> trong repo (bỏ qua <code>mau_*.tex</code>). Tên file = tên lớp (vd. <code>10T1.tex</code> → lớp 10T1). Mã HS trùng thì cập nhật, không xóa lịch sử.</p>
+{% if session.get("can_edit") %}
+<form method="post" action="/restore-from-tex"><button type="submit">Đồng bộ lại từ danh-sach/*.tex</button></form>
+{% else %}
+<p class="muted">Đăng nhập chỉnh sửa để đồng bộ thủ công.</p>
+{% endif %}
+</section>
+
+<h2>Danh sách lớp</h2>
+{% for cl in classes %}
+<div class="card"><a href="/class/{{cl.id}}"><b>{{cl.name}}</b></a> — {{cl.school_year or "Chưa nhập năm học"}} | GVCN: {{cl.homeroom_teacher or "—"}}</div>
+{% else %}
+<p>Chưa có lớp. Sau deploy, app sẽ tự tạo từ <code>danh-sach/*.tex</code> nếu DB trống — hoặc bấm đồng bộ / tạo lớp mới.</p>
+{% endfor %}
+</body></html>

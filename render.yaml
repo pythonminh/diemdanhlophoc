@@ -3,13 +3,15 @@ services:
     name: diemdanhlophoc
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: mkdir -p /var/data && gunicorn app:app
     plan: starter
     envVars:
       - key: DATABASE_PATH
         value: /var/data/diemdanh.db
       - key: SECRET_KEY
         generateValue: true
+      - key: COOKIE_SECURE
+        value: "1"
     disk:
       name: diemdanhlophoc-data
       mountPath: /var/data

@@ -14,18 +14,37 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
+# On Render, default to Persistent Disk path so list survives redeploy when disk is mounted.
+if os.environ.get("RENDER") == "true" and not os.environ.get("DATABASE_PATH"):
+    os.environ["DATABASE_PATH"] = "/var/data/diemdanh.db"
 DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
 
 def ensure_db_dir():
     parent=os.path.dirname(os.path.abspath(DB_PATH))
-    if parent: os.makedirs(parent, exist_ok=True)
+    if parent:
+        try: os.makedirs(parent, exist_ok=True)
+        except OSError: pass
 
 def db_ephemeral_warning():
     """On Render, warn when SQLite is not under /var/data (Persistent Disk mount)."""
     if os.environ.get("RENDER") != "true":
         return False
     path=os.path.abspath(DB_PATH).replace("\\","/")
-    return not path.startswith("/var/data")
+    if not path.startswith("/var/data"):
+        return True
+    # Path says /var/data but no disk mounted → still ephemeral.
+    return not _persistent_disk_mounted()
+
+def _persistent_disk_mounted():
+    """True if /var/data looks like a real mount (not just an empty dir on ephemeral FS)."""
+    try:
+        if not os.path.isdir("/var/data"):
+            return False
+        # Render mounts the disk at /var/data; without it the folder may still exist after mkdir.
+        with open("/proc/mounts", "r", encoding="utf-8", errors="ignore") as f:
+            return any(" /var/data " in line for line in f)
+    except OSError:
+        return os.path.isdir("/var/data")
 
 ensure_db_dir()
 
@@ -340,6 +359,48 @@ def build_seat_map(students, rows, cols):
             unseated.append(st)
     return seat_map, unseated
 
+DANH_SACH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "danh-sach")
+
+def sync_classes_from_danh_sach(only_if_empty=False):
+    """Create/update classes from danh-sach/*.tex (skip mau_*.tex). Roster comes back from git after wipe."""
+    with db() as c:
+        n=c.execute("SELECT COUNT(*) FROM classes").fetchone()[0]
+        if only_if_empty and n>0:
+            return 0, 0, 0
+    if not os.path.isdir(DANH_SACH_DIR):
+        return 0, 0, 0
+    created=added=updated=0
+    for fn in sorted(os.listdir(DANH_SACH_DIR)):
+        if not fn.lower().endswith(".tex"): continue
+        if fn.lower().startswith("mau_"): continue
+        class_name=os.path.splitext(fn)[0].strip()
+        if not class_name: continue
+        path=os.path.join(DANH_SACH_DIR, fn)
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                content=f.read()
+        except OSError:
+            continue
+        records=parse_tex_students(content)
+        if not records: continue
+        with db() as c:
+            row=c.execute("SELECT id FROM classes WHERE name=?",(class_name,)).fetchone()
+            if row:
+                cid=row["id"]
+            else:
+                c.execute("INSERT INTO classes(name) VALUES(?)",(class_name,))
+                cid=c.execute("SELECT id FROM classes WHERE name=?",(class_name,)).fetchone()["id"]
+                created+=1
+        for s in records:
+            s.setdefault("phone",""); s.setdefault("parent_name",""); s.setdefault("parent_phone","")
+        result=upsert_students(cid, records)
+        if result:
+            added+=result[0]; updated+=result[1]
+    return created, added, updated
+
+# Empty DB after Render wipe → restore class roster from files committed in repo.
+sync_classes_from_danh_sach(only_if_empty=True)
+
 def upsert_attendance(c, student_id, day, status, note=""):
     """One attendance row per student per day: update latest, drop older duplicates."""
     existing=c.execute(
@@ -356,6 +417,12 @@ def upsert_attendance(c, student_id, day, status, note=""):
     )
     return "inserted"
 
+@app.post("/restore-from-tex")
+def restore_from_tex():
+    created, added, updated = sync_classes_from_danh_sach(only_if_empty=False)
+    flash(f"Đã đồng bộ từ danh-sach/*.tex: tạo {created} lớp, thêm {added} HS, cập nhật {updated} HS. (Điểm danh/sự kiện cũ vẫn giữ nếu DB chưa bị xóa.)")
+    return redirect(url_for("index"))
+
 @app.route("/")
 def index():
     with db() as c: classes=c.execute("SELECT * FROM classes ORDER BY name").fetchall()
@@ -364,6 +431,7 @@ def index():
         classes=classes,
         db_path=DB_PATH,
         db_ephemeral=db_ephemeral_warning(),
+        disk_ok=_persistent_disk_mounted() if os.environ.get("RENDER")=="true" else None,
     )
 
 @app.post("/class/add")
