@@ -755,7 +755,12 @@ def snapshot_import_upload():
 
 @app.route("/")
 def index():
-    with db() as c: classes=c.execute("SELECT * FROM classes ORDER BY name").fetchall()
+    with db() as c:
+        classes = c.execute("""
+            SELECT classes.*,
+                   (SELECT COUNT(*) FROM students WHERE students.class_id=classes.id) AS student_count
+            FROM classes ORDER BY name
+        """).fetchall()
     return render_template(
         "index.html",
         classes=classes,
