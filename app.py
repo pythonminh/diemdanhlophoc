@@ -14,43 +14,66 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
-# On Render, default to Persistent Disk path so list survives redeploy when disk is mounted.
-if os.environ.get("RENDER") == "true" and not os.environ.get("DATABASE_PATH"):
-    os.environ["DATABASE_PATH"] = "/var/data/diemdanh.db"
-DB_PATH = os.environ.get("DATABASE_PATH", "diemdanh.db")
+# Resolve a writable SQLite path. Free Render has no /var/data disk → must not crash.
+def _path_writable(path):
+    parent = os.path.dirname(os.path.abspath(path)) or "."
+    try:
+        os.makedirs(parent, exist_ok=True)
+        probe = os.path.join(parent, ".diemdanh_write_probe")
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+def resolve_db_path():
+    candidates = []
+    env = (os.environ.get("DATABASE_PATH") or "").strip()
+    if env:
+        candidates.append(env)
+    if os.environ.get("RENDER") == "true":
+        candidates.append("/var/data/diemdanh.db")
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(here, "diemdanh.db"))
+    candidates.append("diemdanh.db")
+    for path in candidates:
+        if _path_writable(path):
+            return path
+    return "diemdanh.db"
+
+DB_PATH = resolve_db_path()
 
 def ensure_db_dir():
-    parent=os.path.dirname(os.path.abspath(DB_PATH))
+    parent = os.path.dirname(os.path.abspath(DB_PATH))
     if parent:
-        try: os.makedirs(parent, exist_ok=True)
-        except OSError: pass
+        try:
+            os.makedirs(parent, exist_ok=True)
+        except OSError:
+            pass
 
 def db_ephemeral_warning():
-    """On Render, warn when SQLite is not under /var/data (Persistent Disk mount)."""
+    """Warn on Render when DB is not on a real Persistent Disk."""
     if os.environ.get("RENDER") != "true":
         return False
-    path=os.path.abspath(DB_PATH).replace("\\","/")
-    if not path.startswith("/var/data"):
-        return True
-    # Path says /var/data but no disk mounted → still ephemeral.
-    return not _persistent_disk_mounted()
+    path = os.path.abspath(DB_PATH).replace("\\", "/")
+    return not (path.startswith("/var/data") and _persistent_disk_mounted())
 
 def _persistent_disk_mounted():
-    """True if /var/data looks like a real mount (not just an empty dir on ephemeral FS)."""
     try:
         if not os.path.isdir("/var/data"):
             return False
-        # Render mounts the disk at /var/data; without it the folder may still exist after mkdir.
         with open("/proc/mounts", "r", encoding="utf-8", errors="ignore") as f:
             return any(" /var/data " in line for line in f)
     except OSError:
-        return os.path.isdir("/var/data")
+        return False
 
 ensure_db_dir()
 
 def db():
-    conn=sqlite3.connect(DB_PATH)
-    conn.row_factory=sqlite3.Row
+    ensure_db_dir()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
     return conn
 
 

@@ -3,16 +3,15 @@ services:
     name: diemdanhlophoc
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: mkdir -p /var/data && gunicorn app:app
-    plan: starter
+    # Free tier: no Persistent Disk. App falls back to ./diemdanh.db if /var/data is missing.
+    # With paid Disk: set DATABASE_PATH=/var/data/diemdanh.db and mount disk at /var/data.
+    startCommand: gunicorn app:app
+    plan: free
     envVars:
-      - key: DATABASE_PATH
-        value: /var/data/diemdanh.db
       - key: SECRET_KEY
         generateValue: true
       - key: COOKIE_SECURE
         value: "1"
-    disk:
-      name: diemdanhlophoc-data
-      mountPath: /var/data
-      sizeGB: 1
+      # Optional (only if you attach a Persistent Disk on a paid plan):
+      # - key: DATABASE_PATH
+      #   value: /var/data/diemdanh.db
