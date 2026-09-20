@@ -1362,27 +1362,43 @@ def save_seating(cid):
     with db() as c:
         if not c.execute("SELECT id FROM classes WHERE id=?",(cid,)).fetchone():
             return "Không tìm thấy lớp",404
-        c.execute("UPDATE classes SET layout_rows=?, layout_cols=? WHERE id=?", (rows, cols, cid))
         students=c.execute("SELECT id FROM students WHERE class_id=?",(cid,)).fetchall()
-        # Clear seats that would collide: apply in two passes — first clear, then set.
+        # Expand grid if form seats sit outside declared size (avoids wiping col 8 when cols=7).
+        max_r, max_c = rows, cols
+        pending=[]
         for st in students:
             sid=st["id"]
             team=normalize_team(request.form.get(f"team_{sid}",""))
             clear=request.form.get(f"clear_seat_{sid}")=="1"
             r=parse_int_cell(request.form.get(f"seat_row_{sid}",""))
             col=parse_int_cell(request.form.get(f"seat_col_{sid}",""))
-            if clear:
+            if not clear:
+                if r is not None: max_r=max(max_r, r)
+                if col is not None: max_c=max(max_c, col)
+            pending.append((sid, team, clear, r, col))
+        rows=min(20, max_r)
+        cols=min(20, max_c)
+        c.execute("UPDATE classes SET layout_rows=?, layout_cols=? WHERE id=?", (rows, cols, cid))
+        # Two-pass: clear all seats first to avoid unique collisions when swapping.
+        for sid, team, clear, r, col in pending:
+            c.execute("UPDATE students SET seat_row=NULL, seat_col=NULL WHERE id=?", (sid,))
+        for sid, team, clear, r, col in pending:
+            if clear or r is None or col is None:
                 c.execute("UPDATE students SET team=?, seat_row=NULL, seat_col=NULL WHERE id=?", (team, sid))
             else:
-                if r is not None and not (1<=r<=rows): r=None
-                if col is not None and not (1<=col<=cols): col=None
-                c.execute("UPDATE students SET team=?, seat_row=?, seat_col=? WHERE id=?", (team, r, col, sid))
+                if not (1<=r<=rows): r=None
+                if not (1<=col<=cols): col=None
+                if r is None or col is None:
+                    c.execute("UPDATE students SET team=?, seat_row=NULL, seat_col=NULL WHERE id=?", (team, sid))
+                else:
+                    c.execute("UPDATE students SET team=?, seat_row=?, seat_col=? WHERE id=?", (team, r, col, sid))
     flash(f"Đã lưu sơ đồ lớp ({rows}×{cols}) và tổ/chỗ ngồi.")
+    # Chỉ ghi .tex local — không đẩy GitHub ở đây (push sẽ kích hoạt Render redeploy và làm lệch chỗ ngồi).
     try:
-        note, _ = persist_class_tex(cid, push_github=True)
-        flash(note)
+        note, _ = persist_class_tex(cid, push_github=False)
+        flash(note + ". Dùng «Lưu danh sách .tex lên GitHub» hoặc «Lưu lên GitHub» ở trang chủ khi cần.")
     except Exception as e:
-        flash(f"Sơ đồ đã lưu trong app nhưng chưa ghi/đẩy .tex: {e}")
+        flash(f"Sơ đồ đã lưu trong app nhưng chưa ghi .tex local: {e}")
     return redirect(url_for("class_page",cid=cid)+"#so-do-lop")
 
 @app.post("/class/<int:cid>/import-xlsx")

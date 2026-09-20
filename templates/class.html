@@ -173,7 +173,7 @@ tr.att-late td{background:#fff8e8!important}
 </details></section>
 
 <section id="so-do-lop"><h2>Sơ đồ lớp</h2>
-<p class="muted">Kéo thả tên vào ô chỗ ngồi (máy tính), hoặc chạm chọn tên rồi chạm ô (điện thoại). Bấm <b>Lưu sơ đồ</b> để ghi vào server.</p>
+<p class="muted">Kéo thả tên vào ô chỗ ngồi (máy tính), hoặc chạm chọn tên rồi chạm ô (điện thoại). Bấm <b>Lưu sơ đồ</b> để ghi vào server. Nên xếp trên bản «Nhìn từ bảng vào lớp» (bản trên); bản giáo viên chỉ để nhìn. Sau khi lưu ổn định, mới bấm «Lưu .tex lên GitHub» / «Lưu lên GitHub» ở trang chủ (tránh Render restart giữa chừng).</p>
 <div class="photo-panel">
 <b>Ảnh học sinh trên sơ đồ</b>
 <p class="muted" style="margin:6px 0 0">Thư mục <code>anh-lop/{{photo_folder}}/</code> — đặt tên file theo <b>mã HS</b> (VD: <code>HS019.jpg</code>). Đang có <b>{{photo_count}}</b> ảnh. Commit lên GitHub để Render giữ ảnh sau khi restart.</p>
@@ -550,11 +550,37 @@ function refreshSeatVisual(seat){
 }
 window.refreshSeatVisual=refreshSeatVisual;
 
-function findSeatBySid(sid){
- return document.querySelector('.seat-grid .seat[data-sid="'+sid+'"]');
+function findSeatBySid(sid, preferRoot){
+ const sel='.seat[data-sid="'+sid+'"]';
+ if(preferRoot){
+  const local=preferRoot.querySelector(sel);
+  if(local) return local;
+ }
+ return document.querySelector('#seatGrid '+sel) || document.querySelector('#seatGridTeacher '+sel);
 }
 function seatsAt(row, col){
  return document.querySelectorAll('.seat-grid .seat[data-row="'+row+'"][data-col="'+col+'"]');
+}
+function syncSeatInputsFromGrid(){
+ // Canonical source: student-view grid (#seatGrid). Keep hidden fields in sync before save.
+ const seated=new Set();
+ document.querySelectorAll('#seatGrid .seat.filled[data-sid]').forEach(seat=>{
+  const sid=seat.dataset.sid;
+  if(!sid) return;
+  seated.add(String(sid));
+  setInputs(sid, seat.dataset.row, seat.dataset.col);
+ });
+ Object.keys(STUDENTS).forEach(sid=>{
+  if(!seated.has(String(sid))) setInputs(sid, null, null);
+ });
+ // Mirror teacher grid from student grid so both views match after edits.
+ document.querySelectorAll('#seatGrid .seat').forEach(src=>{
+  const row=src.dataset.row, col=src.dataset.col, sid=src.dataset.sid||'';
+  document.querySelectorAll('#seatGridTeacher .seat[data-row="'+row+'"][data-col="'+col+'"]').forEach(dst=>{
+   dst.dataset.sid=sid;
+   refreshSeatVisual(dst);
+  });
+ });
 }
 function makePupil(sid){
  const info=STUDENTS[sid]||{};
@@ -606,8 +632,9 @@ function unseat(sid){
 }
 function placeAt(sid, seat){
  if(!sid || !seat) return;
+ const grid=seat.closest('.seat-grid');
  const targetSid=seat.dataset.sid;
- const fromSeat=findSeatBySid(sid);
+ const fromSeat=findSeatBySid(sid, grid);
  if(targetSid && String(targetSid)===String(sid)){ clearSelection(); return; }
  if(targetSid){
   if(fromSeat){
@@ -619,12 +646,13 @@ function placeAt(sid, seat){
  if(fromSeat){
   const fr=fromSeat.dataset.row, fc=fromSeat.dataset.col;
   if(!(fr===seat.dataset.row && fc===seat.dataset.col)){
-   // Only clear origin if different cell (after possible swap already moved target there)
    const stillMe=fromSeat.dataset.sid && String(fromSeat.dataset.sid)===String(sid);
    if(stillMe) clearSeatEl(fromSeat);
   }
  }
  occupySeat(seat, sid);
+ // Keep the other view in lockstep with the same logical (row,col)
+ syncSeatInputsFromGrid();
  clearSelection();
  setHint('Đã xếp chỗ — nhớ bấm «Lưu sơ đồ» để ghi nhận.');
 }
@@ -679,6 +707,7 @@ function bindSeat(seat){
  const grid=document.getElementById('seatGrid');
  const gridT=document.getElementById('seatGridTeacher');
  const pool=document.getElementById('seatPool');
+ const form=document.getElementById('seatingForm');
  if(!grid || !pool) return;
  grid.querySelectorAll('.seat').forEach(bindSeat);
  if(gridT) gridT.querySelectorAll('.seat').forEach(bindSeat);
@@ -689,11 +718,16 @@ function bindSeat(seat){
   e.preventDefault();
   pool.classList.remove('drag-over');
   const sid=e.dataTransfer.getData('text/plain') || dragSid;
-  if(sid){ unseat(sid); clearSelection(); setHint('Đã bỏ chỗ — nhớ bấm «Lưu sơ đồ».'); }
+  if(sid){ unseat(sid); syncSeatInputsFromGrid(); clearSelection(); setHint('Đã bỏ chỗ — nhớ bấm «Lưu sơ đồ».'); }
   dragSid=null;
  });
  const btn=document.getElementById('clearSelectionBtn');
  if(btn) btn.addEventListener('click', clearSelection);
+ if(form){
+  form.addEventListener('submit', ()=>{
+   syncSeatInputsFromGrid();
+  });
+ }
  document.querySelectorAll('.team-edit').forEach(inp=>{
   inp.addEventListener('input', ()=>{
    const sid=inp.dataset.sid;
